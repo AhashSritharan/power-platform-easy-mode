@@ -28,8 +28,11 @@ globalThis.window = { addEventListener() {} };
 const { pollImportProgress } = await import(
     pathToFileURL(join(ROOT, 'extension/src/tools/solution-deployer.js')));
 
-// Real time, wound down: the guards are proportions of the poll interval, so
-// the whole suite runs in well under a second.
+// The guards run on a clock the fake target advances by STEP on every poll,
+// so the limits below count polls — 12, 40 and 12 — and not wall time.
+// Timers are coarse on some systems (about 15.6 ms on Windows), and measured
+// in wall time a 5 ms poll ran three times over its limits there.
+const STEP = 10;
 const FAST = { pollMs: 5, limits: { silence: 120, queue: 400, stall: 120 } };
 
 const httpError = (status) => Object.assign(new Error(`Target API ${status}`), { status });
@@ -46,9 +49,13 @@ const SUCCEEDED = { statecode: 3, statuscode: 30 };
 function fakeTarget({ rows = [httpError(404)], ops = [RUNNING], failure = null } = {}) {
     const calls = { job: 0, op: 0 };
     const next = (list, n) => list[Math.min(n, list.length - 1)];
+    let clock = 0;
     return {
         calls,
+        now: () => clock,
+        // Every poll reads the job row first, so this is where time passes.
         readJob() {
+            clock += STEP;
             const row = next(rows, calls.job++);
             return row instanceof Error ? Promise.reject(row) : Promise.resolve(row);
         },

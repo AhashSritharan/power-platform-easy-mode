@@ -481,13 +481,18 @@ const LIMITS = {
 export function pollImportProgress({
     readJob, readFailure, readAsyncOperation, asyncOperationId,
     log = () => {}, onProgress = () => {}, pollMs = POLL_MS, limits = LIMITS,
+    // The limits are measured on this clock. A test passes its own so they
+    // count polls rather than wall time — timers are coarse on some systems
+    // (about 15.6 ms on Windows), which made a 5 ms test poll run three times
+    // slower than its limits assumed.
+    now = Date.now,
 }) {
     return new Promise((resolve, reject) => {
-        const startTime = Date.now();
+        const startTime = now();
         let lastProgress = -1;
         let lastStatus = -1;
-        let lastSignal = Date.now();   // last time the target told us anything
-        let lastMovement = Date.now(); // last time the import actually advanced
+        let lastSignal = now();   // last time the target told us anything
+        let lastMovement = now(); // last time the import actually advanced
         let queuedLogged = false;
         let inFlight = false;
         let finished = false;
@@ -505,7 +510,7 @@ export function pollImportProgress({
             try { failure = (await readFailure()) ?? fallback; }
             catch { /* unreadable — `fallback` stands */ }
             if (failure) { done(() => reject(new Error(failure))); return; }
-            log('info', `Import completed in ${Math.round((Date.now() - startTime) / 1000)}s.`);
+            log('info', `Import completed in ${Math.round((now() - startTime) / 1000)}s.`);
             done(resolve);
         }
 
@@ -514,18 +519,18 @@ export function pollImportProgress({
             let job;
             try {
                 job = await readJob();
-                lastSignal = Date.now();
+                lastSignal = now();
             } catch (e) {
                 // Any answer at all, 404 included, means the target is reachable;
                 // the row simply does not exist while the job waits its turn.
-                if (e.status) lastSignal = Date.now();
+                if (e.status) lastSignal = now();
                 return false;
             }
             if (!job) return false;
 
             if (typeof job.progress === 'number' && job.progress !== lastProgress) {
                 lastProgress = job.progress;
-                lastMovement = Date.now();
+                lastMovement = now();
                 onProgress(job.progress);
                 if (job.progress < 100) log('info', `Import progress: ${job.progress.toFixed(0)}%`);
             }
@@ -544,10 +549,10 @@ export function pollImportProgress({
                 return false; // a blip, or the record was cleaned up: the guards decide
             }
             if (!op) return false; // an answer with no record in it decides nothing
-            lastSignal = Date.now();
+            lastSignal = now();
             if (op.statuscode !== lastStatus) {
                 lastStatus = op.statuscode;
-                lastMovement = Date.now();
+                lastMovement = now();
             }
 
             if (op.statecode !== ASYNC_COMPLETED) {
@@ -579,12 +584,12 @@ export function pollImportProgress({
                 // definition, so it gets its own, longer rope rather than
                 // tripping the stall limit while it waits its turn.
                 const queued = lastStatus >= 0 && lastStatus < ASYNC_RUNNING;
-                if (Date.now() - lastSignal >= limits.silence) {
+                if (now() - lastSignal >= limits.silence) {
                     done(() => reject(new Error('Lost contact with the target environment while importing.')));
-                } else if (queued && Date.now() - startTime >= limits.queue) {
+                } else if (queued && now() - startTime >= limits.queue) {
                     done(() => reject(new Error(
                         'The import is still queued on the target environment and has not started. Check the system jobs there.')));
-                } else if (!queued && Date.now() - lastMovement >= limits.stall) {
+                } else if (!queued && now() - lastMovement >= limits.stall) {
                     done(() => reject(new Error(lastProgress < 0
                         ? 'The import has not started on the target environment. Check the solution history there.'
                         : `The import stopped reporting progress at ${lastProgress.toFixed(0)}%. Check the solution history on the target.`)));
