@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Power Platform Toolbox — Settings</title>
+    <link rel="stylesheet" href="options.css">
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <img src="../icons/icon48.png" alt="" width="36" height="36">
+            <div>
+                <h1>Power Platform Toolbox</h1>
+                <p class="sub">Choose which tools are active. Changes apply the next time a page loads.</p>
+            </div>
+            <div class="bulk">
+                <button id="enable-all">Enable all</button>
+                <button id="disable-all">Disable all</button>
+            </div>
+        </header>
+
+        <div id="reload-hint" class="hint" hidden>
+            ✔ Saved. Reload any open Dynamics / Power Platform / Jira tabs for the change to take effect.
+        </div>
+
+        <main id="tool-list"></main>
+
+        <footer>
+            <p>🔒 <strong>Privacy:</strong> this extension collects nothing. All settings and tool data are stored
+            only in your browser (<code>chrome.storage.local</code>) and never transmitted anywhere.
+            The only network requests are the ones tools make to the sites they integrate with
+            (your Dynamics / Power Platform environments, Jira, and — if you configure it — the Clockify API).</p>
+            <p><a href="https://github.com/AhashSritharan/power-platform-toolbox" target="_blank" rel="noopener">Source code on GitHub</a></p>
+        </footer>
+    </div>
+    <script type="module" src="options.js"></script>
+</body>
+</html>

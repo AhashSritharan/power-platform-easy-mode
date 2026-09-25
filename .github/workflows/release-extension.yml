@@ -1,0 +1,46 @@
+name: Release Extension
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sensitive-data scan
+        env:
+          # Newline-separated literal strings that must never ship (repo secret).
+          SENSITIVE_DENYLIST: ${{ secrets.SENSITIVE_DENYLIST }}
+        run: node scripts/sensitive-scan.mjs
+
+      - name: Verify (smoke test + syntax)
+        run: |
+          set -euo pipefail
+          node scripts/smoke-test.mjs
+          find extension -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Build extension zip
+        run: |
+          set -euo pipefail
+          (cd extension && zip -r ../power-platform-toolbox-extension.zip .)
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-zip
+          path: power-platform-toolbox-extension.zip
+
+      - name: Attach to GitHub release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: power-platform-toolbox-extension.zip

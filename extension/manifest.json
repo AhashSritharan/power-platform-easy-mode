@@ -1,0 +1,83 @@
+{
+    "manifest_version": 3,
+    "name": "Power Platform Toolbox",
+    "version": "2.0.0",
+    "description": "Developer tools for Dynamics 365, Power Platform, Jira & Clockify. Runs 100% locally — collects no data whatsoever.",
+    "minimum_chrome_version": "111",
+    "permissions": [
+        "storage"
+    ],
+    "host_permissions": [
+        "https://*.dynamics.com/*",
+        "https://*.powerapps.com/*",
+        "https://*.powerautomate.com/*",
+        "https://*.atlassian.net/*",
+        "https://api.clockify.me/*"
+    ],
+    "background": {
+        "service_worker": "src/background.js",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*.dynamics.com/*",
+                "https://*.powerapps.com/*",
+                "https://*.powerautomate.com/*",
+                "https://*.atlassian.net/*"
+            ],
+            "js": ["bootstrap.js"],
+            "run_at": "document_start"
+        },
+        {
+            "matches": [
+                "https://*.dynamics.com/*",
+                "https://*.powerapps.com/*",
+                "https://*.powerautomate.com/*",
+                "https://*.atlassian.net/*"
+            ],
+            "js": ["src/agent/page-agent.js"],
+            "run_at": "document_start",
+            "world": "MAIN"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["src/*"],
+            "matches": [
+                "https://*.dynamics.com/*",
+                "https://*.powerapps.com/*",
+                "https://*.powerautomate.com/*",
+                "https://*.atlassian.net/*"
+            ]
+        }
+    ],
+    "commands": {
+        "open-palette": {
+            "suggested_key": {
+                "default": "Alt+Shift+P"
+            },
+            "description": "Open the Power Platform Toolbox command palette"
+        }
+    },
+    "action": {
+        "default_popup": "popup/popup.html",
+        "default_title": "Power Platform Toolbox",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "32": "icons/icon32.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "options_ui": {
+        "page": "options/options.html",
+        "open_in_tab": true
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "32": "icons/icon32.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    }
+}

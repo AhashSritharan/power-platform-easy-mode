@@ -1,0 +1,15 @@
+# Chrome pack artifacts (the .pem is a private signing key — never commit)
+*.crx
+*.pem
+
+# Release bundles
+userscripts.zip
+power-platform-toolbox-extension.zip
+
+# Tool output full of org data (flow backups, browser snapshots) — never commit
+.flowagent/
+.playwright-mcp/
+
+# Local denylist for scripts/sensitive-scan.mjs — it lists the very strings
+# that must not be committed, so it must not be committed either
+.sensitive-denylist

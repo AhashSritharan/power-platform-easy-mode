@@ -1,0 +1,3 @@
+#!/bin/sh
+# Blocks commits that would add sensitive data. See scripts/sensitive-scan.mjs.
+exec node scripts/sensitive-scan.mjs --staged

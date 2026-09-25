@@ -1,0 +1,136 @@
+:root {
+    --bg: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #0f6cbd;
+    --hover: #f3f6fc;
+    color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1f1f1f;
+        --text: #e8e8e8;
+        --muted: #9ca3af;
+        --border: #3a3a3a;
+        --accent: #479ef5;
+        --hover: #2b2f36;
+    }
+}
+
+* { box-sizing: border-box; }
+
+body {
+    width: 340px;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+}
+
+header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    flex: 1;
+}
+
+#version { color: var(--muted); font-size: 11px; }
+
+main {
+    max-height: 440px;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 80px;
+    padding: 12px 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.tile:hover {
+    background: var(--hover);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.tile-icon {
+    font-size: 24px;
+    line-height: 1;
+}
+
+.tile-label {
+    font-size: 12px;
+    line-height: 1.25;
+    font-weight: 500;
+    /* wrap long captions to at most 3 lines, ellipsis beyond */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.empty {
+    padding: 24px 18px;
+    text-align: center;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.empty .sites {
+    margin-top: 10px;
+    text-align: left;
+    display: inline-block;
+    font-size: 12px;
+}
+
+footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+}
+
+.link-btn {
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+    padding: 0;
+}
+
+.link-btn:hover { text-decoration: underline; }
+
+.privacy { color: var(--muted); font-size: 11px; }
