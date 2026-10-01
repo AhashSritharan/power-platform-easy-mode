@@ -351,6 +351,9 @@ export default {
             .env-group-caret { color: var(--muted); font-size: 9px; width: 10px; flex-shrink: 0; }
             .env-group-count { color: var(--muted); font-weight: 400; font-size: 11px; }
             .env-group-here { margin-left: auto; color: var(--accent); font-size: 11px; font-weight: 600; }
+            .env-group-rename { margin-left: auto; opacity: 0; font-size: 11px; }
+            .env-group-here + .env-group-rename { margin-left: 0; }
+            .env-group-head:hover .env-group-rename, .env-group-rename:focus { opacity: 1; }
             .env-group-body { padding: 2px 4px 4px; }
             .env-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; font-size: 12px; border-radius: 4px; }
             .env-row:hover { background: var(--bg2); }
@@ -401,13 +404,15 @@ export default {
             let environments = [];
             let editingId = null;
             let draggedGroup = null;
+            let renamingGroup = null;
             const collapsed = new Set();
             let collapseSeeded = false;
             const listEl = ui.el('div');
 
             // The family this environment belongs to. There is no group box in
-            // this dialog: the group follows the environment's name, and the
-            // pencil on a row is there for the rare case that is wrong.
+            // this dialog: the group is detected from names and hosts, the
+            // pencil on a group renames it, and the pencil on a row moves one
+            // environment for the rare case detection is wrong.
             const currentGroupName = () =>
                 groupOfEnvId(environments, envId ?? '')
                 || deriveGroup(recordFor(envId ?? '').name || envName);
@@ -422,7 +427,7 @@ export default {
                 // with it, so late names wait for those to finish.
                 backfillNames(environments, {
                     store,
-                    onUpdate: () => { if (!draggedGroup && editingId === null) renderList(); },
+                    onUpdate: () => { if (!draggedGroup && editingId === null && renamingGroup === null) renderList(); },
                 });
             }
 
@@ -450,12 +455,16 @@ export default {
                         className: 'env-grip', draggable: true, textContent: '⠿', title: 'Drag to reorder groups',
                     })]),
                     ui.el('span', { className: 'env-group-caret', textContent: isOpen ? '▼' : '▶' }),
-                    ui.el('span', { textContent: group.label }),
+                    renamingGroup === key && group.group ? renderGroupRename(group) : ui.el('span', { textContent: group.label }),
                     ui.el('span', { className: 'env-group-count', textContent: `(${group.envs.length})` }),
                     ...(group.isCurrent ? [ui.el('span', { className: 'env-group-here', textContent: '📍 you are here' })] : []),
+                    ...(group.group && renamingGroup !== key ? [ui.el('button', {
+                        className: 'ppt-icon-btn env-group-rename', textContent: '✏️', title: 'Rename group',
+                        onclick: (e) => { e.stopPropagation(); renamingGroup = key; renderList(); },
+                    })] : []),
                 ]);
                 head.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('env-grip')) return;
+                    if (e.target.classList.contains('env-grip') || e.target.closest('.env-group-rename-input')) return;
                     if (isOpen) collapsed.add(key); else collapsed.delete(key);
                     renderList();
                 });
@@ -498,6 +507,34 @@ export default {
                     });
                 }
                 return wrap;
+            }
+
+            // Renaming a group writes the new name as every member's explicit
+            // group, so the family keeps it whatever their names say. Clearing
+            // the box hands them back to detection.
+            function renderGroupRename(group) {
+                const input = ui.el('input', {
+                    className: 'ppt-input env-group-rename-input', value: group.label,
+                    style: 'padding:1px 6px;font-size:12px;min-width:0;flex:1',
+                });
+                const finish = async (commit) => {
+                    renamingGroup = null;
+                    if (!commit) { renderList(); return; }
+                    const name = input.value.trim();
+                    for (const env of group.envs) await updateEnvironment(env.envId, { group: name }, store);
+                    // Keep the renamed group open, or closed, as it was.
+                    if (collapsed.delete(group.group.toLowerCase()) && name) collapsed.add(name.toLowerCase());
+                    await reload();
+                };
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') finish(true);
+                    if (e.key !== 'Escape') return;
+                    e.stopPropagation();
+                    finish(false);
+                });
+                input.addEventListener('blur', () => { if (renamingGroup !== null) finish(false); });
+                requestAnimationFrame(() => { input.focus(); input.select(); });
+                return input;
             }
 
             const clearMarks = () => {
@@ -589,7 +626,7 @@ export default {
                 // would read as two fields holding the same answer.
                 const groupEdit = ui.el('input', {
                     className: 'ppt-input',
-                    placeholder: env.derivedGroup ? `${env.derivedGroup} — from the name` : 'Group',
+                    placeholder: env.derivedGroup ? `${env.derivedGroup} — detected` : 'Group',
                     value: env.explicitGroup,
                 });
                 const groupMenu = groupSuggest(groupEdit);

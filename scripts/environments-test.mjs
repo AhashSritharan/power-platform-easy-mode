@@ -25,7 +25,7 @@ globalThis.location = { href: 'https://contoso.crm4.dynamics.com/', origin: 'htt
 
 const {
     deriveGroup, normalizeRecord, recordGroup, groupEnvironments, loadEnvironments,
-    updateEnvironment, removeEnvironment, groupOfHost, backfillNames,
+    updateEnvironment, removeEnvironment, groupOfHost, backfillNames, hostFamily, sameFamily, similarity,
 } = await import(pathToFileURL(join(ROOT, 'extension/src/tools/shared/environments.js')));
 
 // An in-memory stand-in for the tool's chrome.storage namespace.
@@ -52,6 +52,61 @@ assert.equal(deriveGroup(''), '');
 assert.equal(deriveGroup(null), '');
 // "Devices" must not lose its tail to the `dev` stage word.
 assert.equal(deriveGroup('Contoso Devices'), 'Contoso Devices');
+// A stage glued on in capitals is still a stage; in lower case it is a word.
+assert.equal(deriveGroup('SmartWorkflowsDEV'), 'SmartWorkflows');
+assert.equal(deriveGroup('Smartdev'), 'Smartdev');
+
+// ── host families ─────────────────────────────────────────────────────────
+// Stage words and numbers drop out wherever they sit, glued on or separated.
+const stem = (host) => hostFamily(host)?.stem;
+assert.equal(stem('contoso-workflows-dev.crm17.dynamics.com'), 'contosoworkflows');
+assert.equal(stem('contoso-workflowstest.crm17.dynamics.com'), 'contosoworkflows');
+assert.equal(stem('contoso-workflows.crm17.dynamics.com'), 'contosoworkflows');
+assert.equal(stem('contoso-dev-workflows-01.crm17.dynamics.com'), 'contosoworkflows');
+assert.equal(stem('contoso-workflows-pre-prod.crm17.dynamics.com'), 'contosoworkflows');
+assert.equal(stem('fabrikam-applikationprod.crm17.dynamics.com'), 'fabrikamapplikation');
+assert.equal(stem('fabrikam-applikation-dev.crm17.dynamics.com'), 'fabrikamapplikation');
+// Nothing meaningful left, so the slug stands for itself.
+assert.equal(stem('qa.crm17.dynamics.com'), 'qa'); // sensitive-scan: allow
+assert.equal(stem('dev-01.crm17.dynamics.com'), 'dev01'); // sensitive-scan: allow
+assert.equal(hostFamily(null), null);
+
+// Alike is enough: a typo or a small variation stays in the family…
+const alike = (a, b) => sameFamily(hostFamily(a), hostFamily(b));
+assert.equal(alike('contoso-workflows-dev.crm17.dynamics.com', 'contoso-workflow-test.crm17.dynamics.com'), true);
+assert.equal(alike('fabrikam-applikation-dev.crm17.dynamics.com', 'fabrikam-application.crm17.dynamics.com'), true);
+// …but different apps, another region, or short stems do not mix.
+assert.equal(alike('contoso-workflows-dev.crm17.dynamics.com', 'fabrikam-applikation-dev.crm17.dynamics.com'), false);
+assert.equal(alike('contoso-workflows-dev.crm4.dynamics.com', 'contoso-workflows.crm17.dynamics.com'), false);
+assert.equal(alike('abcd-dev.crm17.dynamics.com', 'abce.crm17.dynamics.com'), false); // sensitive-scan: allow
+assert.equal(similarity('kitten', 'kitten'), 1);
+assert.equal(similarity('kitten', 'sitting'), 1 - 3 / 7);
+
+// Names that disagree still land in one family, labelled without a stage.
+const drifted = await loadEnvironments({ store: fakeStore({
+    envIndicator_mappings: {
+        'a1000000-0000-0000-0000-000000000001': { type: 'DEV', name: 'contoso-workflows-dev' },
+        'a2000000-0000-0000-0000-000000000002': { type: 'TEST', name: 'ContosoWorkflows Test' },
+        'a3000000-0000-0000-0000-000000000003': { type: 'PROD', name: 'Contoso Workflows' },
+        'b1000000-0000-0000-0000-000000000001': { type: 'DEV', name: 'DEV' },
+        'b2000000-0000-0000-0000-000000000002': { type: 'TEST', name: 'Fabrikam Test' },
+        'b3000000-0000-0000-0000-000000000003': { type: 'PROD', name: 'Fabrikam Applikation', group: 'Fabrikam' },
+    },
+    envIndicator_hostCache: {
+        'contoso-workflows-dev.crm17.dynamics.com': 'a1000000-0000-0000-0000-000000000001',
+        'contoso-workflowstest.crm17.dynamics.com': 'a2000000-0000-0000-0000-000000000002',
+        'contoso-workflow.crm17.dynamics.com': 'a3000000-0000-0000-0000-000000000003',
+        'fabrikam-applikation-dev.crm17.dynamics.com': 'b1000000-0000-0000-0000-000000000001',
+        'fabrikam-applikationtest.crm17.dynamics.com': 'b2000000-0000-0000-0000-000000000002',
+        'fabrikam-applikationprod.crm17.dynamics.com': 'b3000000-0000-0000-0000-000000000003',
+    },
+}) });
+const groupOf = (prefix) => drifted.find((e) => e.envId.startsWith(prefix)).group;
+assert.deepEqual(['a1', 'a2', 'a3'].map(groupOf), ['Contoso Workflows', 'Contoso Workflows', 'Contoso Workflows']);
+// A bare "DEV" never names the family; an explicit group still wins for its own row.
+assert.equal(groupOf('b1'), 'Fabrikam');
+assert.equal(groupOf('b2'), 'Fabrikam');
+assert.equal(groupOf('b3'), 'Fabrikam');
 
 // ── records ───────────────────────────────────────────────────────────────
 assert.deepEqual(normalizeRecord('DEV'), { type: 'DEV', name: '', group: '', nameSource: '' });
@@ -100,8 +155,8 @@ assert.equal(envs.find((e) => e.isCurrent).envId, 'bbbbbbbb-0000-0000-0000-00000
 const prod = envs.find((e) => e.envId === 'aaaaaaaa-0000-0000-0000-000000000001');
 assert.equal(prod.type, 'PROD');
 assert.equal(prod.url, 'https://contoso-prod.crm17.dynamics.com');
-// An unnamed environment has no group and no host of its own.
-assert.equal(prod.group, '');
+// An unnamed environment takes its group from a sibling host (contoso-dev).
+assert.equal(prod.group, 'Smart Workflows');
 assert.equal(envs.find((e) => e.envId === 'eeeeeeee-0000-0000-0000-000000000005').host, null);
 
 // hostOnly drops what a cross-environment API call could not use.
@@ -114,17 +169,17 @@ assert.deepEqual(withHosts.map((e) => e.host).sort(), [
 
 // ── grouping ──────────────────────────────────────────────────────────────
 const groups = groupEnvironments(envs, { currentGroup: 'Smart Workflows' });
-assert.deepEqual(groups.map((g) => g.label), ['Smart Workflows', 'Antrag Naturgefahren', 'Ungrouped']);
+assert.deepEqual(groups.map((g) => g.label), ['Smart Workflows', 'Antrag Naturgefahren']);
 assert.equal(groups[0].isCurrent, true);
 // Inside a family, stages run DEV → TEST → … → PROD regardless of saved order.
-assert.deepEqual(groups[0].envs.map((e) => e.type), ['DEV', 'TEST']);
+assert.deepEqual(groups[0].envs.map((e) => e.type), ['DEV', 'TEST', 'PROD']);
 assert.deepEqual(groups[1].envs.map((e) => e.type), ['DEV', 'TEST']);
 // Matching the current group ignores case.
 assert.equal(groupEnvironments(envs, { currentGroup: 'smart workflows' })[0].label, 'Smart Workflows');
 // With no current group, saved order decides and ungrouped still sinks.
 assert.deepEqual(
     groupEnvironments(envs, {}).map((g) => g.label),
-    ['Antrag Naturgefahren', 'Smart Workflows', 'Ungrouped']);
+    ['Antrag Naturgefahren', 'Smart Workflows']);
 assert.equal(groupOfHost(envs, 'contoso-dev.crm17.dynamics.com'), 'Smart Workflows');
 
 // ── writing ───────────────────────────────────────────────────────────────

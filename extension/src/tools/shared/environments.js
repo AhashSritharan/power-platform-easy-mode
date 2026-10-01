@@ -50,14 +50,135 @@ export const cleanEnvId = (envId) => String(envId ?? '').replace(/[{}]/g, '').to
 // Stage words that turn "Smart Workflows DEV" into the family "Smart Workflows".
 // Matched only at the end and only with something in front, so an environment
 // genuinely called "Development" keeps its own name as its group.
-const STAGE_SUFFIX = /[\s._/|-]+(dev|development|test|tests|testing|tst|qa|uat|stag|stage|staging|preprod|pre-prod|prod|production|live|sandbox)$/i;
+const STAGE_WORDS = 'dev|development|test|tests|testing|tst|qa|uat|stag|stage|staging|preprod|pre-prod|prod|production|live|sandbox';
+const STAGE_SUFFIX = new RegExp(`[\\s._/|-]+(${STAGE_WORDS})$`, 'i');
+// "SmartWorkflowsDEV": a stage glued on, recognisable only by its capitals.
+const GLUED_STAGE_SUFFIX = /(?<=[a-z0-9])(DEV|TEST|TST|QA|UAT|STAGING|PROD)$/;
+const BARE_STAGE = new RegExp(`^(${STAGE_WORDS})$`, 'i');
 
 /** "Smart Workflows DEV" → "Smart Workflows"; a bare stage name stays as it is. */
 export function deriveGroup(name) {
     const trimmed = String(name ?? '').trim();
     if (!trimmed) return UNGROUPED;
-    const stripped = trimmed.replace(STAGE_SUFFIX, '').trim();
+    const stripped = trimmed.replace(STAGE_SUFFIX, '').replace(GLUED_STAGE_SUFFIX, '').trim();
     return stripped || trimmed;
+}
+
+// ── Families by host ──────────────────────────────────────────────────────
+// Names are typed by people and drift ("Smart Workflows DEV", "SmartWorkflows
+// Test", "Smart Workflows"), so names alone split one family into several.
+// Hosts are steadier: siblings live in the same region and their org slugs
+// differ mostly by stage words and numbers — contoso-workflows-dev /
+// contoso-workflowstest / contoso-dev-workflows-01, all on .crm17.dynamics.com.
+// Stage and number tokens are dropped wherever they sit, a stage glued onto the
+// end is stripped too, and what is left is compared loosely so a typo or a
+// small variation still lands in the family. That will now and then merge two
+// apps that only look alike; one rename pulls them apart, which is less work
+// than gathering a family that detection scattered.
+const HOST_STAGE_WORDS = 'development|production|preprod|staging|testing|sandbox|tests|test|prod|stage|stag|live|uat|tst|dev|qa';
+const HOST_STAGE_TOKEN = new RegExp(`^(${HOST_STAGE_WORDS}|\\d+)$`);
+const HOST_GLUED_STAGE = new RegExp(`(${HOST_STAGE_WORDS})\\d*$`);
+// Stems shorter than this are compared exactly; at this length and above, a
+// similarity of FAMILY_SIMILARITY or more (1 = identical) is one family.
+const FUZZY_MIN_LENGTH = 5;
+const FAMILY_SIMILARITY = 0.8;
+
+/** "contoso-dev-workflows-01.crm17.dynamics.com" → { region: "crm17.dynamics.com", stem: "contosoworkflows", base: "contoso-workflows" } */
+export function hostFamily(host) {
+    const [slug, ...region] = String(host ?? '').toLowerCase().split('.');
+    if (!slug || !region.length) return null;
+    const tokens = slug.replace(/pre[-_]prod/g, 'preprod').split(/[-_]+/).filter(Boolean);
+    let base = tokens.filter((token) => !HOST_STAGE_TOKEN.test(token)).join('-');
+    const unglued = base.replace(HOST_GLUED_STAGE, '').replace(/[-_]+$/, '');
+    if (unglued.length >= 3) base = unglued;
+    // Nothing meaningful left ("dev", "qa-01"): the slug is its own stem.
+    if (base.length < 3) base = slug;
+    return { region: region.join('.'), stem: base.replace(/[^a-z0-9]/g, ''), base };
+}
+
+/** 1 for identical strings, falling towards 0 as edits are needed (Levenshtein). */
+export function similarity(a, b) {
+    if (a === b) return 1;
+    if (!a.length || !b.length) return 0;
+    let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+        const row = [i];
+        for (let j = 1; j <= b.length; j++) {
+            row[j] = Math.min(previous[j] + 1, row[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        previous = row;
+    }
+    return 1 - previous[b.length] / Math.max(a.length, b.length);
+}
+
+/** Whether two host families are close enough to be one: same region, alike stems. */
+export function sameFamily(a, b) {
+    if (!a || !b || a.region !== b.region) return false;
+    if (a.stem === b.stem) return true;
+    if (Math.min(a.stem.length, b.stem.length) < FUZZY_MIN_LENGTH) return false;
+    return similarity(a.stem, b.stem) >= FAMILY_SIMILARITY;
+}
+
+/**
+ * The label a host family shows: the group most of its names imply (shortest on
+ * a tie, which is usually the one without a stage left in it), or the shared
+ * slug when none of them is named yet. A bare "DEV" says nothing about the
+ * family, so it never wins.
+ */
+function familyLabel(members) {
+    // "smartworkflows", "SmartWorkflows" and "Smart Workflows" are one label;
+    // the spelling shown is the most readable one — spaces and capitals over a slug.
+    const readability = (label) => (/\s/.test(label) ? 2 : 0) + (/[A-Z]/.test(label) ? 1 : 0);
+    const counts = new Map();
+    for (const { env } of members) {
+        const label = deriveGroup(env.name);
+        if (!label || BARE_STAGE.test(label)) continue;
+        const key = label.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+        const entry = counts.get(key) ?? { label, count: 0 };
+        entry.count++;
+        if (readability(label) > readability(entry.label)) entry.label = label;
+        counts.set(key, entry);
+    }
+    const [best] = [...counts.values()].sort((a, b) => b.count - a.count || a.label.length - b.label.length);
+    return best?.label ?? members.map((m) => m.base).sort((a, b) => a.length - b.length)[0];
+}
+
+/**
+ * Give environments that share a host family one derived group, so siblings
+ * whose names disagree still land together. An explicit group still wins.
+ * Mutates the passed environment objects in place.
+ */
+export function applyHostFamilies(environments) {
+    const hosts = environments
+        .map((env) => ({ env, family: hostFamily(env.host) }))
+        .filter((entry) => entry.family);
+
+    // Likeness is not transitive, so families are the connected pieces of the
+    // "alike" relation: a ~ b and b ~ c put all three together. Lists are a
+    // handful of environments, so comparing every pair is fine.
+    const parent = hosts.map((_, i) => i);
+    const root = (i) => (parent[i] === i ? i : (parent[i] = root(parent[i])));
+    for (let i = 0; i < hosts.length; i++) {
+        for (let j = i + 1; j < hosts.length; j++) {
+            if (sameFamily(hosts[i].family, hosts[j].family)) parent[root(j)] = root(i);
+        }
+    }
+
+    const families = new Map();
+    hosts.forEach(({ env, family }, i) => {
+        const key = root(i);
+        if (!families.has(key)) families.set(key, []);
+        families.get(key).push({ env, base: family.base });
+    });
+    for (const members of families.values()) {
+        if (members.length < 2) continue;
+        const label = familyLabel(members);
+        for (const { env } of members) {
+            env.derivedGroup = label;
+            if (!env.explicitGroup) env.group = label;
+        }
+    }
+    return environments;
 }
 
 /** Read a stored mapping value (legacy string or record object) as a record. */
@@ -167,7 +288,7 @@ export async function loadEnvironments({ currentEnvId = null, hostOnly = false, 
             isCurrent: !!current && id === current,
         });
     }
-    return environments;
+    return applyHostFamilies(environments);
 }
 
 /**
@@ -219,7 +340,7 @@ export function groupOfHost(environments, host) {
 //
 // It has to be RetrieveCurrentOrganization's FriendlyName — the name the maker
 // portal shows, "Smart Workflows DEV". The organization row's `name` column is
-// the provisioning slug ("smartworkflows-dev", or worse "orgbdab49fe"), which
+// the provisioning slug ("contoso-workflows-dev", or worse "orgbdab49fe"), which
 // is no use as a label and derives nonsense families.
 const orgNameCache = new Map();
 
@@ -267,6 +388,8 @@ export async function backfillNames(environments, { store = envIndicatorStore(),
             env.nameSource = 'org';
             env.derivedGroup = deriveGroup(name);
             if (!env.explicitGroup) env.group = env.derivedGroup;
+            // A new name can change what its whole family is called.
+            applyHostFamilies(environments);
             onUpdate?.(env);
         }));
 }
