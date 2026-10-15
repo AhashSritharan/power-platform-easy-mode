@@ -366,7 +366,7 @@ export async function fetchPagedRuns(apiGet, url, limit, onPage) {
 // Failures are fingerprinted into "issues" that can be pivoted three ways:
 // by flow, by error, or by the flow×error cross ("this flow hit this error N
 // times"). Pure and exported — this is the only part of the Errors view with
-// real logic and no UI to eyeball. See scripts/flow-run-monitor-test.mjs.
+// real logic and no UI to eyeball. See tests/unit/flow-run-monitor.test.mjs.
 export const SPARK_BUCKETS = 36;
 
 // One failed run, with the drilled-out root cause folded in where there was

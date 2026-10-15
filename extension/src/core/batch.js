@@ -99,7 +99,9 @@ function extractError(text) {
     const start = text.indexOf('{');
     if (start === -1) return null;
     try {
-        const parsed = JSON.parse(text.slice(start));
+        // The JSON is followed by the closing multipart boundaries; only the
+        // object itself parses.
+        const parsed = JSON.parse(text.slice(start, text.lastIndexOf('}') + 1));
         return parsed?.error?.message ?? null;
     } catch { return null; }
 }
@@ -110,7 +112,7 @@ function extractError(text) {
  * set yields one failing entry — which is the whole story anyway, since the
  * rest rolled back.
  */
-function parseBatchResponse(text) {
+export function parseBatchResponse(text) {
     const results = [];
     // Each part restates the inner HTTP status line; that is the only marker
     // that reliably separates results across nested multipart boundaries.

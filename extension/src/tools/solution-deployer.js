@@ -215,16 +215,27 @@ async function targetSoap(targetUrl, xmlBody) {
 }
 
 // ── Source-environment actions ────────────────────────────────────────────
-async function createSolution(uniqueName, displayName, publisher) {
-    if (!publisher) {
-        let data = await dv.get(`/publishers?$filter=uniquename eq 'DefaultPublisherForOrg'&$select=publisherid,uniquename,customizationprefix`);
-        publisher = data.value?.[0];
-        if (!publisher) {
-            data = await dv.get('/publishers?$select=publisherid,uniquename,customizationprefix&$top=1');
-            publisher = data.value?.[0];
-        }
+/**
+ * The org's own default publisher. Its unique name is "DefaultPublisher" + the
+ * organization's name (read from live orgs) — there is no "DefaultPublisherForOrg",
+ * and the first publisher listed is as likely to be Microsoft's adxstudio. A
+ * copied org keeps its source's default publisher too, hence the name match
+ * before falling back to the oldest one.
+ */
+async function defaultPublisher() {
+    const select = '$select=publisherid,uniquename,customizationprefix';
+    const name = (await dv.get('/organizations?$select=name')).value?.[0]?.name;
+    if (name) {
+        const exact = await dv.get(`/publishers?${select}&$filter=uniquename eq '${odataQuote(`DefaultPublisher${name}`)}'`);
+        if (exact.value?.[0]) return exact.value[0];
     }
-    if (!publisher) throw new Error('No publisher found. Cannot create solution.');
+    const any = await dv.get(`/publishers?${select}&$filter=startswith(uniquename,'DefaultPublisher')&$orderby=createdon asc&$top=1`);
+    return any.value?.[0] ?? null;
+}
+
+async function createSolution(uniqueName, displayName, publisher) {
+    if (!publisher) publisher = await defaultPublisher();
+    if (!publisher) throw new Error('This environment has no default publisher — pick a publisher for the new solution.');
     return dv.create('solutions', {
         uniquename: uniqueName,
         friendlyname: displayName || uniqueName,
@@ -252,7 +263,7 @@ const EXPORT_LIMITS = {
 
 /**
  * Waits out an export's async job. The read is injected so the state machine
- * can be exercised without an environment: see scripts/solution-export-test.mjs.
+ * can be exercised without an environment: see tests/unit/solution-export.test.mjs.
  *
  * Resolves on success — and also when the job record has vanished, because a
  * record cleaned up moments after succeeding cannot be told apart from one that
@@ -493,7 +504,7 @@ function updateElapsedLabel() {
 // and it is the one that ends the wait.
 //
 // Every read is injected, so the state machine can be exercised without a
-// target environment: see scripts/solution-import-test.mjs.
+// target environment: see tests/unit/solution-import.test.mjs.
 const ASYNC_COMPLETED = 3;
 const ASYNC_RUNNING = 20; // below this the job is queued, not yet executing
 const ASYNC_STATUS = { 30: 'succeeded', 31: 'failed', 32: 'was canceled' };
@@ -1904,7 +1915,8 @@ function renderCleanupForm() {
         }, state.targetEnvUrl));
 
     const solInput = ui.el('input', { className: 'ppt-input', type: 'text', placeholder: 'e.g. QuickDeploy_20260512', value: state.cleanupSolutionName });
-    solInput.addEventListener('change', () => { state.cleanupSolutionName = solInput.value.trim(); });
+    // Re-render so "Run Cleanup" sees the name: it is disabled without one.
+    solInput.addEventListener('change', () => { state.cleanupSolutionName = solInput.value.trim(); renderPanel(); });
     const fetchBtn = ui.el('button', { className: 'ppt-btn', style: 'margin-top:8px', textContent: '📦 Fetch solutions from target…' });
     fetchBtn.addEventListener('click', () => {
         if (!state.targetEnvUrl) { ui.toast('Enter target URL first.'); return; }

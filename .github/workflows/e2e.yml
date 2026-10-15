@@ -53,8 +53,8 @@ jobs:
           node -e '
             const env = JSON.parse(process.env.ENV_VAR_JSON);
             const values = Object.values(env).filter((v) => typeof v === "string" && v.length > 3);
-            if (env.CRM_URL) {
-              const host = new URL(env.CRM_URL).hostname;
+            for (const url of [env.CRM_URL, env.TARGET_URL].filter(Boolean)) {
+              const host = new URL(url).hostname;
               values.push(host, host.split(".")[0]);
             }
             if (env.USER_NAME) values.push(env.USER_NAME.split("@")[0], env.USER_NAME.split("@")[1] ?? "");
@@ -67,4 +67,11 @@ jobs:
       - name: Run end-to-end tests
         env:
           ENV_VAR_JSON: ${{ secrets.ENV_VAR_JSON }}
-        run: npx playwright test --reporter=list
+        run: npx playwright test --project=live --reporter=list
+
+      # A real deployment to TARGET_URL and back out again; skipped when the
+      # secret has no TARGET_URL.
+      - name: Run deployment tests
+        env:
+          ENV_VAR_JSON: ${{ secrets.ENV_VAR_JSON }}
+        run: npx playwright test --project=deploy --reporter=list

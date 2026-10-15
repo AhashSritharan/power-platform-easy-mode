@@ -16,6 +16,15 @@ export class HttpError extends Error {
 }
 
 /**
+ * What to tell the user about a failed request: Dataverse's own message from
+ * an HttpError's body ({ error: { message } }) — the reason, where "HTTP 400"
+ * alone says nothing — or the error's own text.
+ */
+export function errorMessage(e) {
+    try { return JSON.parse(e.body)?.error?.message || e.message; } catch { return e.message; }
+}
+
+/**
  * request({ url, method, headers, body, credentials }) → { status, statusText, text, json() }
  * Throws HttpError for non-2xx responses and Error for network failures.
  */

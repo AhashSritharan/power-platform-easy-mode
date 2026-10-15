@@ -116,46 +116,58 @@ captured `Authorization` headers. If a feature needs a bearer-token-only API,
 the feature is out of scope. Passively observing responses the page already
 loads (page agent) is the outer limit. See PRIVACY.md → "Credentials".
 
-## Verifying changes
+## Tests
 
-```
-node scripts/smoke-test.mjs           # exercises the page agent end-to-end
-node scripts/caret-test.mjs           # exercises caret insertion into page fields
-node scripts/solution-import-test.mjs # exercises the deployer's import watcher
-node scripts/add-existing-test.mjs    # the component query builder and portal hand-off parser
-node scripts/record-browser-test.mjs  # the Record Browser FetchXML builder and column metadata
-node scripts/sensitive-scan.mjs       # no tenant ids, real org hosts, emails or secrets in tracked files
-```
+Every change is test-driven — see [CLAUDE.md](CLAUDE.md) for the rules. Three
+layers, from fastest to most real:
 
-Then load the unpacked extension and exercise the affected tool on a real
-page. The release workflow runs the same checks and attaches the packaged
-extension zip to GitHub releases.
-
-### End-to-end tests
-
-[`tests/e2e/`](tests/e2e/) loads the unpacked extension into Playwright's
-Chromium and runs every tool against a developer environment: each panel opens
-and loads its data, every tool registers its commands on Dynamics and both
-maker portals, and the extension logged no error and none of its own requests
-failed. They only read — nothing is saved, cloned, deployed or switched — so
-they run headless, four browsers side by side, each loading the extension once.
+| Layer | Where | What it covers |
+|---|---|---|
+| Unit | [`tests/unit/`](tests/unit/) | Logic with no UI — query builders, parsers, the import/export watchers, the dependency matching — on Node's built-in test runner |
+| Mock browser | [`tests/e2e/mock/`](tests/e2e/mock/) | The unpacked extension in Chromium against fake orgs ([`fake-dataverse.js`](tests/e2e/mock/fake-dataverse.js)) answering every Dataverse request — the UI flows, including everything that writes: deploy, clone, save, add, turn on/off |
+| Live browser | [`tests/e2e/live/`](tests/e2e/live/) | The unpacked extension against a real developer environment: every tool starts on Dynamics and both maker portals and loads its data. Read-only |
+| Deploy | [`tests/e2e/deploy/`](tests/e2e/deploy/) | A real deployment through the Solution Deployer: a throwaway solution goes from the developer environment to a second one (`TARGET_URL`), gets a dependency check and a cleanup, and everything is deleted again |
 
 ```
 npm install
 npx playwright install chromium
-cp playwright.env.example.json playwright.env.json   # then fill in the values
-npm run test:e2e
-npm run test:e2e -- --headed                         # watch the browsers
-npm run test:e2e:report                              # the HTML report, with traces of failures
+npm test                    # unit + mock: no tenant, no secrets
+npm run test:e2e            # live: needs playwright.env.json (below)
+npm run test:deploy         # a real deployment to TARGET_URL and back out
+npm run test:e2e -- --headed   # watch the browsers
+npm run test:report         # the last browser run's report, with traces of failures
+npm run check               # syntax of every script + the sensitive-data scan
+node scripts/live-request.mjs GET 'solutions?$top=3'   # one real request as the test user
 ```
 
-Chromium starts signed out every time; Edge would sign in with the account
-connected to Windows, which is why it is not the default (`"BROWSER": "msedge"`
-still selects it). Without `USER_NAME` / `USER_PASSWORD` / `TOTP`, the first
-run opens a browser and waits for you to sign in; the session is saved to
-`playwright/.auth/user.json` and reused until it expires. In CI the same JSON comes from the `ENV_VAR_JSON`
-repository secret, for a test user with an authenticator-app MFA method, and
-the release workflow runs the tests before it builds the zip.
+The browser tests run headless, four browsers side by side, each loading the
+extension once. They fail on anything the extension logs as an error, on any
+of its own requests that fails, and — in the mock tests — on any request the
+fake orgs were not told how to answer.
+
+**Where they run:** the pre-commit hook ([`.githooks/pre-commit`](.githooks/pre-commit),
+enabled with `git config core.hooksPath .githooks`) runs the sensitive-data
+scan, the syntax check and the unit tests. [CI](.github/workflows/ci.yml) runs
+those plus the mock tests on every push and pull request. The
+[live and deploy tests](.github/workflows/e2e.yml) run on pushes to `main`
+that change the extension or the tests, every weekday morning, and before
+every release.
+
+**Live test setup:** copy `playwright.env.example.json` to
+`playwright.env.json` and fill in the developer environment's URL and a test
+user with an authenticator-app MFA method (`TOTP` is the authenticator secret
+key). Without the user's credentials the first run opens a browser and waits
+for you to sign in. The session is saved to `playwright/.auth/user.json` and
+reused until it expires. Chromium starts signed out every time; Edge would sign
+in with the account connected to Windows, which is why it is not the default
+(`"BROWSER": "msedge"` still selects it). In CI the same JSON comes from the
+`ENV_VAR_JSON` repository secret; the workflow masks its values in the log and
+uploads no screenshots, as the repository is public.
+
+For the deploy tests, add `TARGET_URL`: a second environment the test user
+can deploy to (a free Developer environment is enough); without it they are
+skipped. The live flow-designer tests use a flow named `ppt-e2e designer
+fixture` in the developer environment and create it the first time.
 
 `playwright.env.json`, the saved session and the test results name the tenant,
 the org and the user: they are gitignored, and the sensitive-data scan refuses

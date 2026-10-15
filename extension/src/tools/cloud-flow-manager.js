@@ -14,7 +14,7 @@
 // On the maker portals the org is the environment in the URL (see
 // shared/current-org.js), and a solution page pre-selects its solution.
 
-import { request } from '../core/http.js';
+import { errorMessage, request } from '../core/http.js';
 import { callExtension } from '../core/lifecycle.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
@@ -353,7 +353,7 @@ async function toggleMultipleFlows(flowUpdates) {
     const responses = await Promise.all(flowUpdates.map((u) =>
         toggleFlowState(u.workflowId, u.turnOn)
             .then(() => ({ workflowId: u.workflowId, success: true }))
-            .catch((e) => ({ workflowId: u.workflowId, success: false, error: e.message }))));
+            .catch((e) => ({ workflowId: u.workflowId, success: false, error: errorMessage(e) }))));
     return {
         succeeded: responses.filter((r) => r.success).map((r) => r.workflowId),
         failed: responses.filter((r) => !r.success).map((r) => ({ workflowId: r.workflowId, error: r.error })),
@@ -909,7 +909,7 @@ async function openCloudFlowManager(preselectSolutionUniqueName = null, { onDism
             await renderFlowList();
             showResultDialog(turnOn ? 'Flow Turned On' : 'Flow Turned Off', `"${flowName}" has been ${turnOn ? 'turned on' : 'turned off'} successfully.`, 'success');
         } catch (e) {
-            showResultDialog('Failed to Toggle Flow', `Could not ${turnOn ? 'turn on' : 'turn off'} "${flowName}".\n\nError: ${e.message}`, 'error');
+            showResultDialog('Failed to Toggle Flow', `Could not ${turnOn ? 'turn on' : 'turn off'} "${flowName}".\n\n${errorMessage(e)}`, 'error');
             if (btn) { btn.disabled = false; btn.textContent = turnOn ? 'Turn On' : 'Turn Off'; }
         }
     }

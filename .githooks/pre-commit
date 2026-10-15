@@ -1,3 +1,9 @@
 #!/bin/sh
-# Blocks commits that would add sensitive data. See scripts/sensitive-scan.mjs.
-exec node scripts/sensitive-scan.mjs --staged
+# Runs before every commit (enabled with: git config core.hooksPath .githooks).
+#   1. blocks commits that would add sensitive data — scripts/sensitive-scan.mjs
+#   2. syntax-checks every script and runs the unit tests (a few seconds)
+# The browser tests are left to CI and `npm test`: too slow for every commit.
+set -e
+node scripts/sensitive-scan.mjs --staged
+node scripts/check-syntax.mjs
+node --test --test-reporter=dot "tests/unit/*.test.mjs"

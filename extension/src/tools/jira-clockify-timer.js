@@ -12,7 +12,7 @@ import * as commands from '../core/commands.js';
 const API = 'https://api.clockify.me/api/v1';
 
 // ── Status routing ──────────────────────────────────────────────────────────
-// At module scope, and free of the DOM, so scripts/jira-status-route-test.mjs
+// At module scope, and free of the DOM, so tests/unit/jira-status-route.test.mjs
 // can walk workflows that are tedious to set up by hand in a real project.
 
 export const MAX_HOPS = 3;

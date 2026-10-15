@@ -2,10 +2,16 @@
     "name": "power-platform-toolbox",
     "private": true,
     "type": "module",
-    "description": "Dev tooling only — the extension itself has no build step and no dependencies.",
+    "description": "Dev tooling only \u2014 the extension itself has no build step and no dependencies.",
     "scripts": {
-        "test:e2e": "playwright test",
-        "test:e2e:report": "playwright show-report"
+        "test": "npm run test:unit && npm run test:mock",
+        "test:unit": "node --test \"tests/unit/*.test.mjs\"",
+        "test:mock": "playwright test --project=mock",
+        "test:e2e": "playwright test --project=live",
+        "test:all": "npm run test:unit && playwright test",
+        "test:report": "playwright show-report",
+        "check": "node scripts/check-syntax.mjs && node scripts/sensitive-scan.mjs",
+        "test:deploy": "playwright test --project=deploy"
     },
     "devDependencies": {
         "@playwright/test": "^1.64.1",

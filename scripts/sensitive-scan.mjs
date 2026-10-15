@@ -75,7 +75,10 @@ function filesInScope(staged) {
     return paths.map((path) => {
         if (BINARY.test(path)) return [path, null];
         // Staged mode reads the index, not the working tree: that is what gets committed.
-        const content = staged ? git('show', `:${path}`) : readFileSync(join(ROOT, path), 'utf8');
+        if (staged) return [path, git('show', `:${path}`)];
+        // A tracked file moved or deleted without staging it yet has nothing left to read.
+        const file = join(ROOT, path);
+        return [path, existsSync(file) ? readFileSync(file, 'utf8') : null];
         return [path, content];
     });
 }

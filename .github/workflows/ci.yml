@@ -1,0 +1,51 @@
+name: CI
+
+# Every push and pull request, forks included: syntax, the sensitive-data scan,
+# unit tests and the mock browser tests. No secrets, no tenant — safe to run on
+# anyone's code. The live tests against the developer environment are e2e.yml.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check
+        run: node scripts/check-syntax.mjs
+
+      - name: Sensitive-data scan
+        env:
+          SENSITIVE_DENYLIST: ${{ secrets.SENSITIVE_DENYLIST }}
+        run: node scripts/sensitive-scan.mjs
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Mock browser tests
+        run: npm run test:mock -- --reporter=list
+
+      # Mock tests run against fake orgs with made-up data, so their report is
+      # safe to publish — unlike the live tests'.
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-test-report
+          path: playwright-report/
+          retention-days: 7

@@ -179,7 +179,5 @@ export const loadingBlock = (text) => ui.el('div', {
     style: 'display:flex;align-items:center;justify-content:center;gap:10px;padding:32px',
 }, [ui.el('div', { className: 'grid-spinner' }), ui.el('span', { className: 'grid-dim', textContent: text })]);
 
-/** The Dataverse message out of an HttpError body, or the error's own text. */
-export function errorMessage(e) {
-    try { return JSON.parse(e.body)?.error?.message ?? e.message; } catch { return e.message; }
-}
+// Kept here for the grid tools that import it from this module.
+export { errorMessage } from '../../core/http.js';

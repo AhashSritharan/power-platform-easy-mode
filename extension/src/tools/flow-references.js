@@ -381,8 +381,15 @@ export function findTextMentions(index, target) {
 
 const canvasNodes = () => [...document.querySelectorAll('.react-flow__node')];
 
+// The live designer (checked 2026-10-15) marks a selected step with neither a
+// .selected class nor aria-selected; what it does do is open the step's details
+// panel, whose id ends in the action name.
+const DETAILS_PANEL = '[data-automation-id="flow-node-details-panel"][id^="flow-node-details-panel-"]';
+
 /** The action the user has selected in the designer, if one is. */
 function selectedActionName() {
+    const panel = document.querySelector(DETAILS_PANEL);
+    if (panel) return panel.id.slice('flow-node-details-panel-'.length);
     const selected = document.querySelector('.react-flow__node.selected')
         ?? canvasNodes().find((node) => node.getAttribute('aria-selected') === 'true');
     return selected?.dataset?.id ?? null;
@@ -393,7 +400,8 @@ function revealInDesigner(name) {
     const node = canvasNodes().find((candidate) => candidate.dataset?.id === name);
     if (!node) return false;
     node.scrollIntoView?.({ block: 'center', inline: 'center', behavior: 'smooth' });
-    (node.querySelector('[role="button"]') ?? node.firstElementChild ?? node).click();
+    // The card is what the user clicks to select a step.
+    (node.querySelector('[data-testid^="card-"]') ?? node.querySelector('[role="button"]') ?? node.firstElementChild ?? node).click();
     return true;
 }
 

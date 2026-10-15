@@ -118,18 +118,21 @@ function findExpressionsInValue(value, path, actionName, visited = new WeakSet()
     if (typeof value === 'string') {
         const pattern = /@\{([^}]+)\}|@([a-zA-Z_][a-zA-Z0-9_]*\([^)]*\))/g;
         let match;
+        let found = false;
         while ((match = pattern.exec(value)) !== null) {
             expressions.push({ expression: match[1] || match[2], location: path, actionName });
+            found = true;
         }
-        if (/\b(outputs|body|variables|items|triggerOutputs|triggerBody|actions|parameters)\(/.test(value)) {
+        // The whole string is only a fallback for references written without
+        // an @ — scanning it as well reported every @-expression twice.
+        if (!found && /\b(outputs|body|variables|items|triggerOutputs|triggerBody|actions|parameters)\(/.test(value)) {
             expressions.push({ expression: value, location: path, actionName });
         }
     } else if (Array.isArray(value)) {
+        // The recursion does the visited bookkeeping. Marking an item here as
+        // well made the recursive call skip it, so no object inside an array —
+        // a condition's { and: [{ equals: […] }] } above all — was ever read.
         value.forEach((item, idx) => {
-            if (item && typeof item === 'object') {
-                if (visited.has(item)) return;
-                visited.add(item);
-            }
             expressions.push(...findExpressionsInValue(item, `${path}[${idx}]`, actionName, visited));
         });
     } else if (value && typeof value === 'object') {

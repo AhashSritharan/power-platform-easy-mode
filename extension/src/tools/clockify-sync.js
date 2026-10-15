@@ -248,12 +248,42 @@ function formatDuration(ms) {
 }
 
 // ── CRM write ─────────────────────────────────────────────────────────────
+/**
+ * Entries with the same description on the same day, merged into one: it
+ * starts at the earliest of them and runs for their summed duration.
+ */
+export function mergeTimeEntries(entries) {
+    const merged = new Map();
+    for (const entry of entries) {
+        const key = `${(entry.description || '').trim()}|${entry.timeInterval.start.split('T')[0]}`;
+        const durationMs = new Date(entry.timeInterval.end) - new Date(entry.timeInterval.start);
+        const existing = merged.get(key);
+        if (!existing) {
+            merged.set(key, { ...entry, _totalMs: durationMs, _count: 1 });
+        } else {
+            if (new Date(entry.timeInterval.start) < new Date(existing.timeInterval.start)) {
+                existing.timeInterval = { ...existing.timeInterval, start: entry.timeInterval.start };
+            }
+            existing._totalMs += durationMs;
+            existing._count += 1;
+        }
+    }
+    return [...merged.values()].map((entry) => ({
+        ...entry,
+        timeInterval: {
+            start: entry.timeInterval.start,
+            end: new Date(new Date(entry.timeInterval.start).getTime() + entry._totalMs).toISOString(),
+        },
+    }));
+}
+
+/** Minutes rounded to 15-minute blocks with a 5-minute grace (20 → 30, 18 → 15). */
+export const roundToBlocks = (minutes) => Math.floor((minutes + 10) / 15) * 15;
+
 async function createOrUpdateTimeEntry(entry, project, projectTask) {
     const start = new Date(entry.timeInterval.start);
     const end = new Date(entry.timeInterval.end);
-    const rawMinutes = Math.round((end - start) / 60000);
-    // Round to 15-minute blocks with a 5-minute grace (e.g. 20min → 30, 18min → 15)
-    const durationMinutes = Math.floor((rawMinutes + 10) / 15) * 15;
+    const durationMinutes = roundToBlocks(Math.round((end - start) / 60000));
     const description = entry.description || 'Imported from Clockify';
     const dateValue = utcMidnight(entry.timeInterval.start);
 
@@ -431,29 +461,7 @@ async function fetchAndShowEntries(startDate, endDate) {
         ui.toast(`✂️ ${truncated} description(s) shortened to ${maxDescription} characters to fit the CRM field.`, 6000);
     }
 
-    // Merge entries with the same description + date; durations are summed.
-    const merged = new Map();
-    for (const entry of entries) {
-        const key = `${(entry.description || '').trim()}|${entry.timeInterval.start.split('T')[0]}`;
-        const durationMs = new Date(entry.timeInterval.end) - new Date(entry.timeInterval.start);
-        const existing = merged.get(key);
-        if (!existing) {
-            merged.set(key, { ...entry, _totalMs: durationMs, _count: 1 });
-        } else {
-            if (new Date(entry.timeInterval.start) < new Date(existing.timeInterval.start)) {
-                existing.timeInterval = { ...existing.timeInterval, start: entry.timeInterval.start };
-            }
-            existing._totalMs += durationMs;
-            existing._count += 1;
-        }
-    }
-    const mergedEntries = [...merged.values()].map((entry) => ({
-        ...entry,
-        timeInterval: {
-            start: entry.timeInterval.start,
-            end: new Date(new Date(entry.timeInterval.start).getTime() + entry._totalMs).toISOString(),
-        },
-    }));
+    const mergedEntries = mergeTimeEntries(entries);
 
     // Resolve known project mappings per unique description
     const mappings = {}; // description -> { project, projectTask, isKnown }
