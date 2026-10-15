@@ -1,5 +1,5 @@
 // Connected-runs tree, shared by Flow Run Monitor (Dynamics pages) and
-// Run Opener (Power Automate run pages).
+// Run Page Actions (Power Automate run pages).
 //
 // Builds the chain of ACTUAL flow runs around a starting run using the
 // Dataverse flowruns table: walks up parentrunid to the topmost triggering

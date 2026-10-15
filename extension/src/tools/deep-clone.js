@@ -2782,6 +2782,6 @@ export default {
         dv = new Dataverse();
         store = createStore('deep-clone');
         ui.addStyle('dc', STYLE);
-        commands.register({ toolId: 'deep-clone', title: 'Clone Record', icon: '📋', run: openCloneDialog });
+        commands.register({ toolId: 'deep-clone', title: 'Clone Record', icon: '🧬', svg: 'copy', run: openCloneDialog });
     },
 };

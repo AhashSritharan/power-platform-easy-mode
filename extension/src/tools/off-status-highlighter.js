@@ -1,4 +1,4 @@
-// Off-Status Highlighter (native).
+// Turned-Off Highlighter (native).
 // Tints solution-view rows whose status is "Off" in the Power Apps and
 // Power Automate maker portals.
 
@@ -21,9 +21,12 @@ function scan() {
 export default {
     init() {
         pageStyle('ppt-off-status-style', `
-            .ppt-off-row { background-color: #ffcccc !important; }
-            @media (prefers-color-scheme: dark) {
-                .ppt-off-row { background-color: #5c2626 !important; }
+            /* Translucent overlay on the row's own background, so text stays
+               readable whether the portal is light or dark, regardless of
+               the OS theme. Keeps hover/selection colors underneath. */
+            .ppt-off-row {
+                background-image: linear-gradient(rgba(220, 38, 38, 0.18), rgba(220, 38, 38, 0.18)) !important;
+                box-shadow: inset 3px 0 0 rgb(220, 38, 38);
             }
         `);
 

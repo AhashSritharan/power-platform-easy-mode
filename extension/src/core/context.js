@@ -42,7 +42,7 @@ export const ENV_ID = new RegExp(`(?:Default-)?${GUID.source}`, 'i');
  * An environment id as a URL should carry it.
  *
  * Ids are stored lowercased, which is fine for a GUID but not for the one form
- * that is not one: the portal writes "Default-<tenant guid>" and Run Opener
+ * that is not one: the portal writes "Default-<tenant guid>" and Run Page Actions
  * found that play URLs mind the casing, so restore it on the way out.
  */
 export const envIdForUrl = (envId) => String(envId ?? '').replace(/^default-/i, 'Default-');

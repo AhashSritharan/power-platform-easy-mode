@@ -5,7 +5,9 @@ const commands = [];
 let nextId = 1;
 
 /**
- * register({ toolId, title, icon?, subtitle?, run })
+ * register({ toolId, title, icon?, subtitle?, kind?, run })
+ * `kind: 'setting'` files a command (a toggle, a cache, a settings dialog)
+ * under Settings at the bottom of the palette and popup, away from the tools.
  * Returns the stored command, so a tool that owns a stateful toggle can keep
  * its title in step with the state — the popup and palette read the title
  * afresh each time they open.

@@ -100,8 +100,9 @@ class FakeEvent {
 }
 
 class FakeShadowRoot {
-    constructor(host) { this.host = host; this.children = []; }
+    constructor(host) { this.host = host; this.children = []; this.listeners = {}; }
     appendChild(node) { this.children.push(node); return node; }
+    addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
 }
 
 class FakeDataTransfer {

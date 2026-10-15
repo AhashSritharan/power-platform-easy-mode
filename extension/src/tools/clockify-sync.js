@@ -67,21 +67,6 @@ const STYLE = `
     .cs-unknown .status { font-size: 11px; color: var(--muted); margin-top: 2px; }
     .cs-unknown .status.mapped { color: #107C10; }
     .cs-unknown .status.stale { color: #835C00; }
-    /* Fixed layer: the dialog body scrolls, so an absolutely placed dropdown gets clipped. */
-    .cs-ac {
-        display: none; position: fixed;
-        background: var(--bg); border: 1px solid var(--border); border-radius: 0 0 4px 4px;
-        max-height: 200px; overflow-y: auto; z-index: 10; box-shadow: var(--shadow);
-    }
-    .cs-ac.up { border-radius: 4px 4px 0 0; }
-    .cs-ac-item { padding: 9px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--border); }
-    .cs-ac-item:hover { background: var(--bg2); }
-    .cs-ac-msg { padding: 10px 12px; font-size: 13px; color: var(--muted); }
-    .cs-ac-head {
-        padding: 7px 12px; font-size: 11px; color: var(--muted);
-        text-transform: uppercase; letter-spacing: 0.5px; background: var(--bg2);
-        border-bottom: 1px solid var(--border);
-    }
     @keyframes cs-spin { to { transform: rotate(360deg); } }
 `;
 
@@ -645,84 +630,30 @@ function openAssignModal(desc, mergedEntries, mappings, onDone) {
     // Entries are grouped by description, so one group can span several Clockify projects.
     const clockifyProjects = [...new Set(matching.map((e) => e.project?.name).filter(Boolean))].join(', ');
 
-    const projectInput = ui.el('input', { className: 'ppt-input', autocomplete: 'off', placeholder: 'Type to search projects…', value: local.project?.name ?? '' });
-    const projectDropdown = ui.el('div', { className: 'cs-ac' });
-    const taskInput = ui.el('input', { className: 'ppt-input', autocomplete: 'off', placeholder: 'Type to search tasks…', value: local.projectTask?.name ?? '' });
-    const taskDropdown = ui.el('div', { className: 'cs-ac' });
+    const projectInput = ui.el('input', { className: 'ppt-input', placeholder: 'Type to search projects…', value: local.project?.name ?? '' });
+    const taskInput = ui.el('input', { className: 'ppt-input', placeholder: 'Type to search tasks…', value: local.projectTask?.name ?? '' });
+    const asItems = (records) => records.map((record) => ({ label: record.name, record }));
 
-    const wire = (input, dropdown, search, onPick) => {
-        let timer = null;
-        let scroller = null;
-
-        // Anchor the dropdown to the input in viewport coordinates, flipping up when space is short.
-        const place = () => {
-            const rect = input.getBoundingClientRect();
-            const below = window.innerHeight - rect.bottom - 8;
-            const above = rect.top - 8;
-            const up = below < 160 && above > below;
-            dropdown.classList.toggle('up', up);
-            dropdown.style.left = `${rect.left}px`;
-            dropdown.style.width = `${rect.width}px`;
-            dropdown.style.maxHeight = `${Math.max(80, Math.min(200, up ? above : below))}px`;
-            dropdown.style.top = up ? 'auto' : `${rect.bottom}px`;
-            dropdown.style.bottom = up ? `${window.innerHeight - rect.top}px` : 'auto';
-        };
-
-        const hide = () => {
-            dropdown.style.display = 'none';
-            scroller?.removeEventListener('scroll', place);
-            window.removeEventListener('resize', place);
-        };
-
-        const show = async () => {
-            // Escape the scrolling dialog body — the backdrop carries the .ppt theme variables.
-            const layer = input.closest('.ppt-backdrop');
-            if (layer && dropdown.parentNode !== layer) layer.appendChild(dropdown);
-            scroller = input.closest('.ppt-dialog-body');
-            scroller?.addEventListener('scroll', place);
-            window.addEventListener('resize', place);
-
-            dropdown.replaceChildren(ui.el('div', { className: 'cs-ac-msg', textContent: 'Searching…' }));
-            dropdown.style.display = 'block';
-            place();
-            try {
-                const { items, header } = await search(input.value.trim());
-                dropdown.replaceChildren(
-                    ...(header ? [ui.el('div', { className: 'cs-ac-head', textContent: header })] : []),
-                    ...(items.length
-                        ? items.map((item) => {
-                            const node = ui.el('div', { className: 'cs-ac-item', textContent: item.name });
-                            node.addEventListener('mousedown', () => {
-                                onPick(item);
-                                input.value = item.name;
-                                hide();
-                            });
-                            return node;
-                        })
-                        : [ui.el('div', { className: 'cs-ac-msg', textContent: 'No results found' })]));
-            } catch (e) {
-                dropdown.replaceChildren(ui.el('div', { className: 'cs-ac-msg', textContent: `Error: ${e.message}` }));
-            }
-        };
-        // Keep focus on the input while interacting with the list, so blur doesn't close it mid-click.
-        dropdown.addEventListener('mousedown', (e) => e.preventDefault());
-        input.addEventListener('focus', show);
-        input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(show, 300); });
-        input.addEventListener('blur', () => setTimeout(hide, 200));
-    };
-
-    wire(projectInput, projectDropdown,
-        async (text) => text
-            ? { items: await searchProjects(text) }
-            : { items: await recentProjects(), header: 'Recent projects' },
-        (item) => {
-            local.project = item;
+    const projectPicker = ui.suggest({
+        input: projectInput, debounce: 300, loading: 'Searching…', empty: 'No results found',
+        items: async (text) => (text
+            ? asItems(await searchProjects(text))
+            : { items: asItems(await recentProjects()), header: 'Recent projects' }),
+        onPick: ({ record }) => {
+            projectInput.value = record.name;
+            local.project = record;
             local.projectTask = null;
             taskInput.value = '';
-        });
-    wire(taskInput, taskDropdown,
-        async (text) => ({ items: await searchTasks(text, local.project?.id) }),
-        (item) => { local.projectTask = item; });
+        },
+    });
+    const taskPicker = ui.suggest({
+        input: taskInput, debounce: 300, loading: 'Searching…', empty: 'No results found',
+        items: async (text) => asItems(await searchTasks(text, local.project?.id)),
+        onPick: ({ record }) => {
+            taskInput.value = record.name;
+            local.projectTask = record;
+        },
+    });
 
     ui.modal({
         title: 'Assign Project & Task',
@@ -734,9 +665,9 @@ function openAssignModal(desc, mergedEntries, mappings, onDone) {
                     ...(clockifyProjects ? [ui.el('div', { textContent: `📁 ${clockifyProjects}` })] : []),
                 ]),
                 ui.el('label', { className: 'ppt-label', textContent: 'CRM Project' }),
-                ui.el('div', { style: 'position:relative' }, [projectInput, projectDropdown]),
+                projectPicker.node,
                 ui.el('label', { className: 'ppt-label', textContent: 'CRM Project Task' }),
-                ui.el('div', { style: 'position:relative' }, [taskInput, taskDropdown]),
+                taskPicker.node,
             );
         },
         buttons: [{
@@ -802,7 +733,7 @@ export default {
             userId: await store.get('clockify_user_id', ''),
             timeEntrySettingsId: await store.get('clockify_timeentrysettings_id', ''),
         };
-        commands.register({ toolId: 'clockify-sync', title: 'Import from Clockify', icon: '📊', run: startImport });
-        commands.register({ toolId: 'clockify-sync', title: 'Clockify Sync settings', icon: '🕐', run: openSettings });
+        commands.register({ toolId: 'clockify-sync', title: 'Import from Clockify', icon: '📊', svg: 'clockArrowDownload', run: startImport });
+        commands.register({ toolId: 'clockify-sync', title: 'Clockify Sync settings', icon: '🕐', svg: 'settings', kind: 'setting', run: openSettings });
     },
 };

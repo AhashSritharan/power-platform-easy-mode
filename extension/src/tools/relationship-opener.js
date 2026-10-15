@@ -1,4 +1,4 @@
-// Relationship Opener (native).
+// Classic Relationship Dialog (native).
 // Adds "Manage Relationship" to the Advanced (…) context menu on the Power
 // Apps Relationships page and opens the classic manage-relationship dialog in
 // a modal iframe. Supports 1:n, n:1 and n:n relationships.
@@ -87,7 +87,8 @@ export default {
         commands.register({
             toolId: 'relationship-opener',
             title: 'Clear Dynamics URL cache',
-            icon: '🔗',
+            icon: '🗑️', svg: 'delete',
+            kind: 'setting',
             run: async () => {
                 orgUrlCache = {};
                 await store.remove('orgUrlCache');
@@ -106,7 +107,7 @@ export default {
                 });
                 return response.json().value?.[0]?.MetadataId ?? null;
             } catch (e) {
-                console.warn(`[Relationship Opener] ${relType} lookup failed:`, e);
+                console.warn(`[Classic Relationship Dialog] ${relType} lookup failed:`, e);
                 return null;
             }
         }

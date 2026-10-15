@@ -739,7 +739,7 @@ export default {
             toolId: 'flow-references',
             title: 'Find All References',
             subtitle: 'Shift+F12 — what reads this step, and what it reads',
-            icon: '🔗',
+            icon: '🔗', svg: 'link',
             run,
         });
         // The binding every IDE uses for this, and one the browser leaves alone.

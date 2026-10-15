@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Smoke test for the Solution Import Monitor's row model
- * (src/tools/solution-import-monitor.js) — the part that decides what counts as
+ * Smoke test for the Solution History's import row model
+ * (src/tools/shared/solution-imports.js) — the part that decides what counts as
  * one operation, and the only part with no UI to eyeball.
  *
  * Loads the real module against a stubbed extension environment and checks the
@@ -24,7 +24,7 @@ globalThis.document = { addEventListener() {}, querySelector: () => null, queryS
 globalThis.window = { addEventListener() {} };
 
 const { operationLabel, importJobRow, historyRow, mergeRows } = await import(
-    pathToFileURL(join(ROOT, 'extension/src/tools/solution-import-monitor.js')));
+    pathToFileURL(join(ROOT, 'extension/src/tools/shared/solution-imports.js')));
 
 const iso = (minutesAgo) => new Date(Date.UTC(2026, 7, 5, 12, 0, 0) - minutesAgo * 60_000).toISOString();
 

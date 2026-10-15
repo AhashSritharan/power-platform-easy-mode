@@ -15,6 +15,7 @@ export const TOOLS = [
         description: 'Colored DEV/TEST/PROD badge in the navbar, with one-click environment switching',
         version: '2.0',
         category: 'Power Platform',
+        area: 'environment',
         file: 'src/tools/environment-indicator.js',
         matches: [
             'https://*.dynamics.com/*',
@@ -25,10 +26,11 @@ export const TOOLS = [
     },
     {
         id: 'off-status-highlighter',
-        name: 'Off-Status Highlighter',
-        description: 'Highlights rows with status "Off" in Power Apps and Power Automate solution views',
+        name: 'Turned-Off Highlighter',
+        description: 'Highlights turned-off components (status "Off") in Power Apps and Power Automate solution views',
         version: '2.0',
         category: 'Power Platform',
+        area: 'solutions',
         file: 'src/tools/off-status-highlighter.js',
         matches: [
             'https://make.powerapps.com/environments/*',
@@ -37,10 +39,11 @@ export const TOOLS = [
     },
     {
         id: 'audit-viewer',
-        name: 'Audit Viewer',
-        description: 'Enhanced audit details viewer for Dynamics 365 using the Web API',
+        name: 'Audit History',
+        description: 'Who changed what and when — browse audit history with old and new values, filtered by table, record, user, operation and date',
         version: '2.0',
         category: 'Dynamics 365',
+        area: 'data',
         file: 'src/tools/audit-viewer.js',
         matches: ['https://*.dynamics.com/main.aspx*'],
     },
@@ -50,16 +53,28 @@ export const TOOLS = [
         description: 'Deep clone Dataverse records with related child records — in this org, or into another environment keeping the same GUID',
         version: '2.0',
         category: 'Dynamics 365',
+        area: 'data',
         file: 'src/tools/deep-clone.js',
         matches: ['https://*.dynamics.com/main.aspx*'],
     },
     {
         id: 'field-editor',
-        name: 'Field Editor',
-        description: 'Update any field on a Dataverse form bypassing the form — all field types incl. lookups',
-        version: '2.0',
+        name: 'Record Editor',
+        description: 'View every value on a Dataverse record and change any of them in place, bypassing the form — all column types incl. lookups',
+        version: '3.0',
         category: 'Dynamics 365',
+        area: 'data',
         file: 'src/tools/field-editor.js',
+        matches: ['https://*.dynamics.com/main.aspx*'],
+    },
+    {
+        id: 'record-browser',
+        name: 'Record Browser',
+        description: 'Every record of a table with every column on offer — sort, filter and pick columns without editing a view; starts from the view you are on, downloads files and shows images',
+        version: '1.0',
+        category: 'Dynamics 365',
+        area: 'data',
+        file: 'src/tools/record-browser.js',
         matches: ['https://*.dynamics.com/main.aspx*'],
     },
     {
@@ -68,26 +83,28 @@ export const TOOLS = [
         description: 'Deploy solutions between environments, check dependencies, clean up deployed solutions',
         version: '3.0',
         category: 'Dynamics 365',
+        area: 'solutions',
         file: 'src/tools/solution-deployer.js',
-        matches: ['https://*.dynamics.com/main.aspx*'],
+        matches: [
+            'https://*.dynamics.com/main.aspx*',
+            'https://make.powerapps.com/environments/*',
+            'https://make.powerautomate.com/environments/*',
+        ],
     },
     {
-        id: 'solution-import-monitor',
-        name: 'Solution Import Monitor',
-        description: 'Real-time progress of solution imports and upgrades in the current environment',
-        version: '3.0',
+        id: 'solution-history',
+        name: 'Solution History',
+        description: 'Imports and exports in one panel — live progress and failure logs of solution imports and upgrades, and every export the environment still holds, re-downloadable',
+        version: '4.0',
         category: 'Dynamics 365',
-        file: 'src/tools/solution-import-monitor.js',
-        matches: ['https://*.dynamics.com/main.aspx*'],
-    },
-    {
-        id: 'solution-export-history',
-        name: 'Solution Export History',
-        description: 'Every solution export the environment still holds, with one-click re-download of the original zip',
-        version: '1.0',
-        category: 'Dynamics 365',
-        file: 'src/tools/solution-export-history.js',
-        matches: ['https://*.dynamics.com/main.aspx*'],
+        area: 'solutions',
+        file: 'src/tools/solution-history.js',
+        // Off Dynamics, the org is the environment in the maker-portal URL.
+        matches: [
+            'https://*.dynamics.com/main.aspx*',
+            'https://make.powerapps.com/environments/*',
+            'https://make.powerautomate.com/environments/*',
+        ],
     },
     {
         id: 'solution-add-existing',
@@ -95,6 +112,7 @@ export const TOOLS = [
         description: 'Add existing components to a solution from a grid you can sort, filter and pick columns on per column — like a model-driven view',
         version: '1.0',
         category: 'Dynamics 365',
+        area: 'solutions',
         file: 'src/tools/solution-add-existing.js',
         matches: [
             'https://*.dynamics.com/main.aspx*',
@@ -107,8 +125,13 @@ export const TOOLS = [
         description: 'View and manage cloud flows in solutions — enable/disable individually or in bulk',
         version: '2.0',
         category: 'Power Automate',
+        area: 'flows',
         file: 'src/tools/cloud-flow-manager.js',
-        matches: ['https://*.dynamics.com/main.aspx*'],
+        matches: [
+            'https://*.dynamics.com/main.aspx*',
+            'https://make.powerapps.com/environments/*',
+            'https://make.powerautomate.com/environments/*',
+        ],
     },
     {
         id: 'flow-expression-validator',
@@ -116,6 +139,7 @@ export const TOOLS = [
         description: 'Validates flow expressions and finds references to non-existent actions or variables',
         version: '2.0',
         category: 'Power Automate',
+        area: 'flows',
         file: 'src/tools/flow-expression-validator.js',
         matches: ['https://make.powerautomate.com/*', 'https://*.make.powerautomate.com/*'],
     },
@@ -125,6 +149,7 @@ export const TOOLS = [
         description: 'Pick a step, trigger or variable and see everything that references it — expressions, runAfter and variable writes, plus what it references back',
         version: '1.0',
         category: 'Power Automate',
+        area: 'flows',
         file: 'src/tools/flow-references.js',
         matches: ['https://make.powerautomate.com/*', 'https://*.make.powerautomate.com/*'],
     },
@@ -134,6 +159,7 @@ export const TOOLS = [
         description: 'Field picker and Parse JSON schema for a Dataverse List rows query — restores dynamic content for records expanded with 1:N children, and inserts fields at your cursor',
         version: '1.1',
         category: 'Power Automate',
+        area: 'flows',
         file: 'src/tools/flow-schema-builder.js',
         matches: ['https://make.powerautomate.com/*', 'https://*.make.powerautomate.com/*'],
     },
@@ -143,24 +169,31 @@ export const TOOLS = [
         description: 'Monitor flow runs with advanced filtering, statistics, and visualization',
         version: '2.2',
         category: 'Power Automate',
+        area: 'flows',
         file: 'src/tools/flow-run-monitor.js',
-        matches: ['https://*.dynamics.com/main.aspx*'],
+        matches: [
+            'https://*.dynamics.com/main.aspx*',
+            'https://make.powerapps.com/environments/*',
+            'https://make.powerautomate.com/environments/*',
+        ],
     },
     {
         id: 'run-opener',
-        name: 'Run Opener',
+        name: 'Run Page Actions',
         description: '"Run tree", "Open run", "Re-run" and "Download" buttons on Power Automate run pages',
         version: '3.3',
         category: 'Power Automate',
+        area: 'flows',
         file: 'src/tools/run-opener.js',
         matches: ['https://make.powerautomate.com/*', 'https://*.make.powerautomate.com/*'],
     },
     {
         id: 'relationship-opener',
-        name: 'Relationship Opener',
-        description: '"Manage relationship" on the Power Apps Relationships page (1:n, n:1, n:n)',
+        name: 'Classic Relationship Dialog',
+        description: 'Adds "Manage Relationship" to the Power Apps Relationships page, opening the classic relationship dialog (1:n, n:1, n:n)',
         version: '3.0',
         category: 'Power Apps',
+        area: 'data',
         file: 'src/tools/relationship-opener.js',
         matches: ['https://make.powerapps.com/*'],
     },
@@ -170,6 +203,7 @@ export const TOOLS = [
         description: 'Start/stop a Clockify timer from Jira issues with one click, and line the issue up with the work — your working status and assigned to you',
         version: '2.0',
         category: 'Jira & Clockify',
+        area: 'time',
         defaultEnabled: false,
         file: 'src/tools/jira-clockify-timer.js',
         matches: [
@@ -183,11 +217,43 @@ export const TOOLS = [
         description: 'Import time entries from Clockify into Dynamics 365',
         version: '2.0',
         category: 'Jira & Clockify',
+        area: 'time',
         defaultEnabled: false,
         file: 'src/tools/clockify-sync.js',
         matches: ['https://*.dynamics.com/main.aspx*'],
     },
 ];
+
+// What a tool works on, for the palette and popup: tools are grouped by area
+// and their icon sits on the area's color, so the eye finds the right group
+// before reading a single title. `category` stays the product a tool runs in.
+export const AREAS = [
+    { id: 'solutions', name: 'Solutions', color: '#8764b8' },
+    { id: 'flows', name: 'Flows', color: '#0f6cbd' },
+    { id: 'data', name: 'Data', color: '#107c10' },
+    { id: 'environment', name: 'Environment', color: '#ca5010' },
+    { id: 'time', name: 'Time tracking', color: '#038387' },
+];
+// Commands registered with `kind: 'setting'` (toggles, caches, settings)
+// collect here, below the tools.
+export const SETTINGS_AREA = { id: 'settings', name: 'Settings', color: '#7a7574' };
+
+/**
+ * Group commands ({ toolId, kind?, ... }) into the areas above, in area order
+ * and registration order within one; settings last, empty areas left out.
+ * → [{ id, name, color, commands }]
+ */
+export function groupByArea(commands) {
+    const areaOf = new Map(TOOLS.map((tool) => [tool.id, tool.area]));
+    return [...AREAS, SETTINGS_AREA]
+        .map((area) => ({
+            ...area,
+            commands: commands.filter((command) => (command.kind === 'setting'
+                ? area === SETTINGS_AREA
+                : area.id === (areaOf.get(command.toolId) ?? AREAS[0].id))),
+        }))
+        .filter((area) => area.commands.length);
+}
 
 export const CATEGORY_ORDER = ['Power Platform', 'Dynamics 365', 'Power Automate', 'Power Apps', 'Jira & Clockify'];
 

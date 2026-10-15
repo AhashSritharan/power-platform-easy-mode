@@ -28,7 +28,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
 // Paths that must never be tracked at all: tool output full of org data.
-const FORBIDDEN_PATHS = [/^\.flowagent\//, /^\.playwright-mcp\//, /^\.sensitive-denylist$/, /\.pem$/];
+const FORBIDDEN_PATHS = [
+    /^\.flowagent\//, /^\.playwright-mcp\//, /^\.sensitive-denylist$/, /\.pem$/,
+    /^playwright\.env\.json$/, /^playwright\/\.auth\/(?!\.gitkeep$)/, /^test-results\//, /^playwright-report\//,
+];
 
 const BINARY = /\.(png|jpe?g|gif|ico|webp|zip|crx|woff2?)$/i;
 

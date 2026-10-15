@@ -1,4 +1,4 @@
-// Canvas-app resolution against Dataverse, shared by Run Opener and
+// Canvas-app resolution against Dataverse, shared by Run Page Actions and
 // Flow Run Monitor.
 //
 // The trigger headers of an app-triggered run (x-ms-client-app-id,
@@ -39,7 +39,7 @@ async function fetchDependentCanvasAppIds(apiGet, workflowId) {
 // names resolved. Returns [{ id, name }] (id = canvasappid, name may be null),
 // or [] when the flow has no canvas-app dependency (e.g. not in a solution).
 // This is definition-level: it finds apps that CAN trigger the flow, which is
-// how the run tree resolves the origin, and how Run Opener falls back when a
+// how the run tree resolves the origin, and how Run Page Actions falls back when a
 // run's trigger header carries no usable app id (solution apps).
 export async function resolveCanvasAppsForFlow(apiGet, workflowId) {
     const appIds = await fetchDependentCanvasAppIds(apiGet, workflowId);

@@ -4,6 +4,8 @@
 // can never collide with host-page CSS (and vice versa). Fluent-flavored,
 // light/dark aware.
 
+import { icon } from './icons.js';
+
 let shadowRoot = null;
 
 const BASE_CSS = `
@@ -85,15 +87,82 @@ const BASE_CSS = `
         transition: opacity 0.2s ease, transform 0.2s ease; word-break: break-word;
     }
     .ppt-toast.visible { opacity: 1; transform: translateY(0); }
-    .ppt-palette-list { max-height: 50vh; overflow-y: auto; margin-top: 8px; }
+    .ppt-palette-list { max-height: 60vh; overflow-y: auto; margin-top: 8px; padding: 2px; }
+    .ppt-palette-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+    .ppt-palette-card {
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+        min-height: 92px; padding: 12px 8px; border: 1px solid var(--border);
+        border-top: 3px solid var(--tile, var(--border)); border-radius: 10px;
+        background: none; color: var(--text); font: inherit; text-align: center; cursor: pointer;
+        transition: background 0.1s, border-color 0.1s;
+    }
+    .ppt-palette-card:hover, .ppt-palette-card.active { background: var(--bg2); border-color: var(--tile, var(--accent)); }
+    .ppt-palette-card .icon {
+        width: 40px; height: 40px; border-radius: 10px; font-size: 22px; line-height: 1;
+        display: flex; align-items: center; justify-content: center;
+        background: color-mix(in srgb, var(--tile, var(--muted)) 18%, transparent);
+        color: var(--tile, var(--text));
+    }
+    .ppt-palette-card .title {
+        font-size: 12px; line-height: 1.25; font-weight: 500;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .ppt-palette-card .sub {
+        font-size: 11px; color: var(--muted); max-width: 100%;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ppt-palette-rows { display: flex; flex-direction: column; gap: 2px; }
     .ppt-palette-item {
         display: flex; align-items: center; gap: 10px; width: 100%;
-        padding: 9px 12px; border: none; background: none; color: var(--text);
+        padding: 7px 12px; border: none; background: none; color: var(--text);
         font: inherit; text-align: left; cursor: pointer; border-radius: 6px;
     }
     .ppt-palette-item:hover, .ppt-palette-item.active { background: var(--bg2); }
-    .ppt-palette-item .icon { flex-shrink: 0; width: 22px; text-align: center; }
-    .ppt-palette-item .sub { color: var(--muted); font-size: 12px; }
+    .ppt-palette-item .icon {
+        flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px;
+        display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1;
+        background: color-mix(in srgb, var(--tile, var(--muted)) 18%, transparent);
+        color: var(--tile, var(--text));
+    }
+    .ppt-palette-item .text { min-width: 0; }
+    .ppt-palette-item .title { font-weight: 500; }
+    .ppt-palette-item .sub {
+        color: var(--muted); font-size: 12px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ppt-palette-group {
+        display: flex; align-items: center; gap: 6px;
+        margin: 10px 12px 4px; font-size: 11px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);
+    }
+    .ppt-palette-group::before {
+        content: ''; width: 8px; height: 8px; border-radius: 50%;
+        background: var(--tile, var(--muted));
+    }
+    .ppt-palette-group:first-child { margin-top: 2px; }
+    /* The area colors are tuned for light; lift the glyph to keep contrast on dark. */
+    @media (prefers-color-scheme: dark) {
+        .ppt-palette-item .icon, .ppt-palette-card .icon { color: color-mix(in srgb, var(--tile, var(--text)) 60%, white); }
+    }
+    /* Suggestions under a text input (see suggest): a themed stand-in for
+       <datalist>, whose popup is browser chrome and ignores the theme. */
+    .ppt-ac-wrap { position: relative; }
+    .ppt-ac {
+        display: none; position: fixed; z-index: 2147483060; overflow-y: auto;
+        background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+        box-shadow: var(--shadow); padding: 4px;
+    }
+    .ppt-ac-item {
+        display: flex; flex-direction: column; gap: 1px; padding: 6px 10px;
+        border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text);
+    }
+    .ppt-ac-item:hover, .ppt-ac-item.active { background: var(--bg2); }
+    .ppt-ac-sub { font-size: 11px; color: var(--muted); font-family: Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ppt-ac-msg { padding: 8px 10px; font-size: 13px; color: var(--muted); }
+    .ppt-ac-head {
+        padding: 6px 10px 4px; font-size: 11px; font-weight: 600; color: var(--muted);
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
     .ppt-panel {
         position: fixed; z-index: 2147483000;
         background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
@@ -129,8 +198,50 @@ function newRoot(parent) {
         style.textContent = css;
         shadow.appendChild(style);
     }
+    shadow.addEventListener('keydown', restoreCancelledEditing);
     roots.add(shadow);
     return shadow;
+}
+
+/**
+ * Editing keys inside our own text boxes, applied by hand when the page
+ * cancelled them.
+ *
+ * Rich host pages cancel keys at the window level: Backspace to stop the
+ * browser navigating back, Ctrl+A to select their own grid or canvas. A
+ * cancelled keydown cancels the default action in EVERY focused box on the
+ * page, ours included, so typing works but deleting or selecting all does
+ * nothing. Which listener runs first is not ours to decide, so wait until
+ * dispatch has finished and, only if the default was taken away, do the edit
+ * here and announce it with the `input` event listeners expect.
+ */
+function restoreCancelledEditing(event) {
+    const input = event.target;
+    const typable = input?.tagName === 'TEXTAREA'
+        || (input?.tagName === 'INPUT' && ['text', 'search', 'url', 'email', 'number', ''].includes(input.type));
+    if (!typable || event.altKey) return;
+    const mod = event.ctrlKey || event.metaKey;
+    const selectAll = mod && event.key.toLowerCase() === 'a' && !event.shiftKey;
+    const remove = !mod && (event.key === 'Backspace' || event.key === 'Delete');
+    if (!selectAll && !remove) return;
+
+    setTimeout(() => {
+        if (!event.defaultPrevented || input.readOnly || input.disabled) return;
+        if (selectAll) { input.select(); return; }
+        if (input.type === 'number') return; // no selection API; leave it be
+        const value = input.value ?? '';
+        const start = input.selectionStart ?? value.length;
+        const end = input.selectionEnd ?? start;
+        const [from, to] = start !== end
+            ? [start, end]
+            : event.key === 'Backspace'
+                ? [Math.max(0, start - 1), start]
+                : [start, Math.min(value.length, start + 1)];
+        if (from === to) return;
+        input.value = value.slice(0, from) + value.slice(to);
+        input.setSelectionRange(from, from);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, 0);
 }
 
 function root() {
@@ -173,6 +284,7 @@ export function el(tag, props = {}, children = []) {
 
 let toastNode = null;
 let toastTimer = null;
+let toastSeq = 0;
 
 export function toast(message, duration = 3000) {
     if (!toastNode?.isConnected) {
@@ -181,8 +293,15 @@ export function toast(message, duration = 3000) {
     }
     clearTimeout(toastTimer);
     toastNode.textContent = message;
-    requestAnimationFrame(() => toastNode.classList.add('visible'));
-    toastTimer = setTimeout(() => toastNode.classList.remove('visible'), duration);
+    // Start the hide timer only once the toast is shown. Background tabs hold
+    // animation frames but not timers, so a toast raised there used to hide
+    // first and then show on return, with nothing left to hide it again.
+    const token = ++toastSeq;
+    requestAnimationFrame(() => {
+        if (token !== toastSeq) return;
+        toastNode.classList.add('visible');
+        toastTimer = setTimeout(() => toastNode.classList.remove('visible'), duration);
+    });
 }
 
 // ── Escape handling ───────────────────────────────────────────────────────
@@ -219,6 +338,131 @@ export function onEscape(handler) {
         if (i !== -1) escapeStack.splice(i, 1);
         if (!escapeStack.length) document.removeEventListener('keydown', onDocumentEscape, true);
     };
+}
+
+/**
+ * suggest({ input, items, onPick, debounce?, minChars?, empty?, loading? })
+ *   → { node, hide, isOpen, refresh }
+ * Suggestions under a text input, in the toolbox's own theme — the stand-in
+ * for <datalist>, whose popup is browser chrome. `items(text)` returns (or
+ * resolves to) [{ label, sub?, ... }] or { items, header?, message? } — a
+ * message alone shows as a note ("Select a table first"). `onPick(item)`
+ * gets the chosen one and decides what the input shows. Arrow keys move,
+ * Enter picks, and Escape closes the suggestions before the layer under them.
+ *
+ * The menu is placed in viewport coordinates, so a scrolling dialog body or
+ * panel cannot clip it, and opens upward when there is no room below. Mount
+ * `node` (the input inside a wrapper) where the input would have gone.
+ */
+export function suggest({ input, items, onPick, debounce = 0, minChars = 0, empty = null, loading = null }) {
+    const menu = el('div', { className: 'ppt-ac' });
+    const node = el('div', { className: 'ppt-ac-wrap' }, [input, menu]);
+    input.autocomplete = 'off';
+    input.spellcheck = false; // names and logical names, not prose
+    let list = [];
+    let active = -1;
+    let timer = null;
+    let seq = 0;
+    let focused = false;
+    let releaseEscape = null;
+
+    const place = () => {
+        const rect = input.getBoundingClientRect();
+        const below = window.innerHeight - rect.bottom - 8;
+        const above = rect.top - 8;
+        const up = below < 160 && above > below;
+        Object.assign(menu.style, {
+            left: `${rect.left}px`,
+            width: `${Math.max(rect.width, 220)}px`,
+            maxHeight: `${Math.max(80, Math.min(260, up ? above : below))}px`,
+            top: up ? 'auto' : `${rect.bottom + 2}px`,
+            bottom: up ? `${window.innerHeight - rect.top + 2}px` : 'auto',
+        });
+    };
+    const isOpen = () => menu.style.display === 'block';
+    const hide = () => {
+        menu.style.display = 'none';
+        active = -1;
+        releaseEscape?.();
+        releaseEscape = null;
+        // Scrolls inside the shadow root never reach the window; the root's
+        // own capture listener sees them.
+        input.getRootNode().removeEventListener('scroll', place, true);
+        window.removeEventListener('resize', place);
+    };
+    const open = (children) => {
+        menu.replaceChildren(...children);
+        if (!children.length) { hide(); return; }
+        if (!isOpen()) {
+            menu.style.display = 'block';
+            input.getRootNode().addEventListener('scroll', place, true);
+            window.addEventListener('resize', place);
+            releaseEscape ??= onEscape(hide);
+        }
+        place();
+    };
+    const message = (text) => el('div', { className: 'ppt-ac-msg', textContent: text });
+    const highlight = (index) => {
+        active = index;
+        menu.querySelectorAll('.ppt-ac-item').forEach((child, i) => child.classList.toggle('active', i === index));
+        menu.querySelectorAll('.ppt-ac-item')[index]?.scrollIntoView({ block: 'nearest' });
+    };
+    const show = async () => {
+        const token = ++seq;
+        const text = input.value.trim();
+        list = [];
+        active = -1;
+        if (text.length < minChars) { hide(); return; }
+        const pending = items(text);
+        if (loading && pending instanceof Promise) open([message(loading)]);
+        let result;
+        try { result = await pending; } catch (e) { result = e; }
+        if (token !== seq || !focused) return;
+        if (result instanceof Error) { open([message(`Error: ${result.message}`)]); return; }
+        const { items: found = [], header = null, message: note = null } = Array.isArray(result) ? { items: result } : (result ?? {});
+        list = found;
+        open([
+            ...(header ? [el('div', { className: 'ppt-ac-head', textContent: header })] : []),
+            ...(note ? [message(note)] : []),
+            ...found.map((item) => el('div', { className: 'ppt-ac-item', title: item.title ?? '' }, [
+                el('span', { textContent: item.label }),
+                ...(item.sub ? [el('span', { className: 'ppt-ac-sub', textContent: item.sub })] : []),
+            ])),
+            ...(!found.length && !note && empty ? [message(empty)] : []),
+        ]);
+    };
+    const pick = (index) => {
+        const item = list[index];
+        if (!item) return;
+        hide();
+        onPick(item);
+    };
+
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(show, debounce);
+    });
+    input.addEventListener('focus', () => { focused = true; show(); });
+    // Later than the menu's own mousedown, so a click on it still lands.
+    input.addEventListener('blur', () => { focused = false; ++seq; setTimeout(hide, 150); });
+    menu.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // keep focus in the input
+        const item = e.target.closest('.ppt-ac-item');
+        if (item) pick([...menu.querySelectorAll('.ppt-ac-item')].indexOf(item));
+    });
+    input.addEventListener('keydown', (e) => {
+        if (!isOpen() || !list.length) return;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            highlight((active + step + list.length) % list.length);
+        } else if (e.key === 'Enter' && active !== -1) {
+            e.preventDefault();
+            e.stopPropagation();
+            pick(active);
+        }
+    });
+    return { node, hide, isOpen, refresh: show };
 }
 
 /**
@@ -277,49 +521,123 @@ export function confirmDialog(message, { title = 'Confirm', okLabel = 'OK' } = {
 }
 
 /**
- * Command palette: searchable list of { icon?, title, subtitle?, run }.
+ * Command palette, in sections — cards in a grid, like the toolbar popup:
+ * openPalette({ sections: [{ name, color, layout?, items }] })
+ * item: { icon?, svg?, title, subtitle?, keywords?, color?, run }
+ * `layout: 'list'` renders a section as plain rows (settings: rare and wordy).
+ * `svg` names a core/icons.js icon, drawn in the item color; the `icon`
+ * emoji is the fallback.
+ *
+ * Every item keeps a fixed place, for muscle memory: no usage-based ordering.
+ * A query keeps the section headers, so a match still says its area. Arrow
+ * keys move through the grid in all four directions.
  */
-export function openPalette(items) {
+export function openPalette({ sections }) {
     modal({
         title: '🧰 Power Platform Toolbox',
-        width: '520px',
+        width: '760px',
         render: (body, close) => {
             const list = el('div', { className: 'ppt-palette-list' });
             const input = el('input', {
                 className: 'ppt-input', placeholder: 'Search tools and commands…', type: 'text',
             });
+            let visible = []; // [{ item, node }] in reading order
             let active = 0;
 
-            const refresh = () => {
-                const query = input.value.trim().toLowerCase();
-                const visible = items.filter((item) =>
-                    !query || `${item.title} ${item.subtitle ?? ''}`.toLowerCase().includes(query));
-                list.replaceChildren(...visible.map((item, i) => el('button', {
-                    className: `ppt-palette-item${i === active ? ' active' : ''}`,
-                    onclick: () => { close(); item.run(); },
+            const glyph = (item) => {
+                const tile = el('span', { className: 'icon' }, [(item.svg && icon(item.svg)) || (item.icon ?? '⚡')]);
+                if (item.color) tile.style.setProperty('--tile', item.color);
+                return tile;
+            };
+            const run = (item) => { close(); item.run(); };
+            const card = (item) => {
+                const node = el('button', {
+                    className: 'ppt-palette-card',
+                    title: item.subtitle ? `${item.title}\n${item.subtitle}` : item.title,
+                    onclick: () => run(item),
                 }, [
-                    el('span', { className: 'icon', textContent: item.icon ?? '⚡' }),
-                    el('span', {}, [
-                        el('div', { textContent: item.title }),
-                        ...(item.subtitle ? [el('div', { className: 'sub', textContent: item.subtitle })] : []),
-                    ]),
-                ])));
-                if (!visible.length) {
-                    list.replaceChildren(el('div', { className: 'ppt-note', textContent: 'No matching commands' }));
-                }
-                return visible;
+                    glyph(item),
+                    el('span', { className: 'title', textContent: item.title.replace(/^Open\s+/i, '') }),
+                    ...(item.subtitle ? [el('span', { className: 'sub', textContent: item.subtitle })] : []),
+                ]);
+                if (item.color) node.style.setProperty('--tile', item.color);
+                return node;
+            };
+            const row = (item) => el('button', { className: 'ppt-palette-item', onclick: () => run(item) }, [
+                glyph(item),
+                el('span', { className: 'text' }, [
+                    el('div', { className: 'title', textContent: item.title }),
+                    ...(item.subtitle ? [el('div', { className: 'sub', textContent: item.subtitle })] : []),
+                ]),
+            ]);
+
+            const setActive = (index) => {
+                visible[active]?.node.classList.remove('active');
+                active = index;
+                visible[active]?.node.classList.add('active');
+                visible[active]?.node.scrollIntoView({ block: 'nearest' });
             };
 
-            input.addEventListener('input', () => { active = 0; refresh(); });
+            const render = () => {
+                const query = input.value.trim().toLowerCase();
+                visible = [];
+                const nodes = [];
+                for (const section of sections) {
+                    const items = section.items.filter((item) => !query
+                        || `${item.title} ${item.subtitle ?? ''} ${item.keywords ?? ''} ${section.name}`.toLowerCase().includes(query));
+                    if (!items.length) continue;
+                    const header = el('div', { className: 'ppt-palette-group', textContent: section.name });
+                    if (section.color) header.style.setProperty('--tile', section.color);
+                    const isList = section.layout === 'list';
+                    const container = el('div', { className: isList ? 'ppt-palette-rows' : 'ppt-palette-grid' });
+                    for (const item of items) {
+                        const node = isList ? row(item) : card(item);
+                        visible.push({ item, node });
+                        container.append(node);
+                    }
+                    nodes.push(header, container);
+                }
+                list.replaceChildren(...(visible.length ? nodes
+                    : [el('div', { className: 'ppt-note', textContent: 'No matching commands' })]));
+                active = 0;
+                setActive(0);
+            };
+
+            // The nearest item in a direction, by on-screen position, so it
+            // follows the grid however many columns fit.
+            const step = (dx, dy) => {
+                const from = visible[active]?.node.getBoundingClientRect();
+                if (!from) return;
+                const cx = from.left + from.width / 2;
+                const cy = from.top + from.height / 2;
+                let best = -1;
+                let bestScore = Infinity;
+                visible.forEach(({ node }, index) => {
+                    if (index === active) return;
+                    const r = node.getBoundingClientRect();
+                    const x = r.left + r.width / 2 - cx;
+                    const y = r.top + r.height / 2 - cy;
+                    const along = dx ? x * dx : y * dy;   // distance in the wanted direction
+                    const across = Math.abs(dx ? y : x);  // drift sideways
+                    if (along <= 1) return;
+                    // Left/right stay on the same row; up/down prefer the same column.
+                    const score = dx ? (across > from.height / 2 ? Infinity : along) : along + across * 2;
+                    if (score < bestScore) { bestScore = score; best = index; }
+                });
+                if (best !== -1) setActive(best);
+            };
+
+            input.addEventListener('input', render);
             input.addEventListener('keydown', (e) => {
-                const visible = refresh();
-                if (e.key === 'ArrowDown') { active = Math.min(active + 1, visible.length - 1); refresh(); e.preventDefault(); }
-                else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); refresh(); e.preventDefault(); }
-                else if (e.key === 'Enter' && visible[active]) { close(); visible[active].run(); }
+                const moves = { ArrowDown: [0, 1], ArrowUp: [0, -1], ArrowRight: [1, 0], ArrowLeft: [-1, 0] };
+                // Left/right move the caret while there is text to move through.
+                if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && input.value) return;
+                if (moves[e.key]) { step(...moves[e.key]); e.preventDefault(); }
+                else if (e.key === 'Enter' && visible[active]) run(visible[active].item);
             });
 
             body.append(input, list);
-            refresh();
+            render();
             setTimeout(() => input.focus(), 0);
         },
     });
@@ -409,37 +727,6 @@ export function panel({ title, width = 440, anchor, mountInto, render, buttons =
     // open will treat them as a click outside itself and dismiss.
     shieldFromPage(card);
 
-    /**
-     * Deletion inside our own text boxes, applied by hand.
-     *
-     * Rich editors cancel Backspace at the window level to stop the browser
-     * navigating back, and a cancelled keydown cancels the deletion in EVERY
-     * focused box on the page — ours included. Typing still works, so the
-     * symptom is characters going in and nothing coming out. Rather than
-     * depend on a default action something upstream has taken away, do the
-     * edit here and announce it with the `input` event listeners expect.
-     */
-    card.addEventListener('keydown', (event) => {
-        const input = event.target;
-        if (input?.tagName !== 'INPUT' && input?.tagName !== 'TEXTAREA') return;
-        if (event.key !== 'Backspace' && event.key !== 'Delete') return;
-        if (event.ctrlKey || event.metaKey || event.altKey) return;
-
-        const value = input.value ?? '';
-        const start = input.selectionStart ?? value.length;
-        const end = input.selectionEnd ?? start;
-        const [from, to] = start !== end
-            ? [start, end]
-            : event.key === 'Backspace'
-                ? [Math.max(0, start - 1), start]
-                : [start, Math.min(value.length, start + 1)];
-
-        event.preventDefault();
-        if (from === to) return;
-        input.value = value.slice(0, from) + value.slice(to);
-        input.setSelectionRange?.(from, from);
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
 
     /**
      * Where the panel lands, in viewport coordinates.

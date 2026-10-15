@@ -136,12 +136,12 @@ const ok = (label) => { passed++; console.log(`  ✓ ${label}`); };
     ok('gives up on a job that runs forever');
 }
 
-// ── Export History rows ───────────────────────────────────────────────────
+// ── Solution History export rows ───────────────────────────────────────────────────
 // Reading the wrong creator lookup is invisible in review and obvious only in
 // front of real data, where every impersonated export is credited to "SYSTEM".
 {
     const { exportRow, downloadName } = await import(
-        pathToFileURL(join(ROOT, 'extension/src/tools/solution-export-history.js')));
+        pathToFileURL(join(ROOT, 'extension/src/tools/shared/solution-exports.js')));
 
     const impersonated = exportRow({
         exportsolutionuploadid: '3e4e5ad6-0a84-4f53-9531-7e624e32a917',

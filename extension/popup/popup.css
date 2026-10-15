@@ -134,3 +134,59 @@ footer {
 .link-btn:hover { text-decoration: underline; }
 
 .privacy { color: var(--muted); font-size: 11px; }
+
+/* ── Areas: a header per area, its color behind each tile's icon ── */
+.area {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 12px 2px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+}
+.area:first-child { margin-top: 2px; }
+.area::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tile, var(--muted));
+}
+
+.tile { border-top: 3px solid var(--tile, var(--border)); }
+.tile:hover { border-color: var(--tile, var(--accent)); color: var(--text); }
+.tile .tile-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    background: color-mix(in srgb, var(--tile, var(--muted)) 18%, transparent);
+}
+
+.settings { display: flex; flex-direction: column; gap: 2px; }
+.setting {
+    border: none;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.setting:hover { background: var(--hover); }
+
+/* Fluent icons are drawn in currentColor: the area color. */
+.tile .tile-icon { color: var(--tile, var(--text)); }
+.setting { display: flex; align-items: center; gap: 8px; }
+.setting svg { flex-shrink: 0; color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+    .tile .tile-icon { color: color-mix(in srgb, var(--tile, var(--text)) 60%, white); }
+}

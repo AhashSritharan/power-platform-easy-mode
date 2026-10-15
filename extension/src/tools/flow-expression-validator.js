@@ -422,11 +422,12 @@ async function runValidator() {
 export default {
     init() {
         ui.addStyle('fev', STYLE);
-        commands.register({ toolId: 'flow-expression-validator', title: 'Validate Flow Expressions', icon: '🔍', run: runValidator });
+        commands.register({ toolId: 'flow-expression-validator', title: 'Validate Flow Expressions', icon: '🔍', svg: 'mathFormula', run: runValidator });
         commands.register({
             toolId: 'flow-expression-validator',
             title: 'Clear Dynamics URL cache',
-            icon: '🗑️',
+            icon: '🗑️', svg: 'delete',
+            kind: 'setting',
             run: async () => { await clearOrgUrlCache(); ui.toast('Dynamics URL cache cleared.'); },
         });
         document.addEventListener('keydown', (e) => {

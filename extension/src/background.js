@@ -3,7 +3,8 @@
 // Responsibilities:
 //   1. Proxy cross-origin requests via fetch, restricted to a fixed allowlist
 //      of first-party hosts (tools call this through src/core/http.js).
-//   2. Open/close helper tabs on behalf of tools.
+//   2. Open/close helper tabs on behalf of tools, incl. a background tab that
+//      signs in to a Dynamics org so the proxy has a session to send.
 //   3. Relay the command-palette keyboard shortcut to the active tab.
 //   4. Show the welcome page on first install.
 //
@@ -96,6 +97,48 @@ async function proxyFetch(request) {
     }
 }
 
+// ── Dynamics session warm-up ─────────────────────────────────────────────
+//
+// The maker portals sign in to Dataverse with bearer tokens, so a browser can
+// be signed in to make.powerapps.com without any Dynamics session cookie —
+// and the proxy above, which relies on those cookies, then gets 401. Loading
+// the org's app shell once lets SSO set the cookie. It is opened in a
+// background tab and closed again once it lands back on the org after the
+// sign-in redirects.
+const WARM_TIMEOUT_MS = 30_000;
+
+async function warmSession(origin) {
+    if (!isAllowedUrl(origin) || !/\.dynamics\.com$/i.test(new URL(origin).hostname)) return { ok: false, error: 'blocked' };
+    const host = new URL(origin).hostname;
+    const tab = await chrome.tabs.create({ url: `${origin}/main.aspx`, active: false });
+    try {
+        await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, WARM_TIMEOUT_MS);
+            const cleanup = () => {
+                clearTimeout(timer);
+                chrome.tabs.onUpdated.removeListener(onUpdated);
+                chrome.tabs.onRemoved.removeListener(onRemoved);
+            };
+            function onUpdated(tabId, change, updated) {
+                if (tabId !== tab.id || change.status !== 'complete') return;
+                let landed = '';
+                try { landed = new URL(updated.url ?? '').hostname; } catch { /* not readable yet */ }
+                if (landed === host) { cleanup(); resolve(); }
+            }
+            function onRemoved(tabId) {
+                if (tabId === tab.id) { cleanup(); reject(new Error('closed')); }
+            }
+            chrome.tabs.onUpdated.addListener(onUpdated);
+            chrome.tabs.onRemoved.addListener(onRemoved);
+        });
+        return { ok: true };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    } finally {
+        chrome.tabs.remove(tab.id).catch(() => { /* already closed */ });
+    }
+}
+
 // ── Messages from content scripts ────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -108,6 +151,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (!isAllowedUrl(msg.url)) { sendResponse({ error: 'blocked' }); return false; }
             chrome.tabs.create({ url: msg.url, active: msg.active, index: sender.tab ? sender.tab.index + 1 : undefined })
                 .then((tab) => sendResponse({ tabId: tab.id }));
+            return true;
+
+        case 'warm-session':
+            warmSession(msg.origin).then(sendResponse);
             return true;
 
         case 'close-tab':

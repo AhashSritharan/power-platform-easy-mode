@@ -1,0 +1,70 @@
+name: End-to-end tests
+
+# The unpacked extension in Chromium against the developer environment.
+# Needs the ENV_VAR_JSON secret: the same JSON as playwright.env.json, with
+# USER_NAME / USER_PASSWORD / TOTP of a test user (see playwright.env.example.json).
+#
+# The repository is public, and so are its Actions logs and artifacts. Every
+# value from the secret is masked in the log, and no report, screenshot or
+# trace is uploaded — run the tests locally to see those.
+on:
+  # Changes to what the tests exercise — not docs.
+  push:
+    branches: [main]
+    paths:
+      - 'extension/**'
+      - 'tests/e2e/**'
+      - 'playwright.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/e2e.yml'
+  # Daily on weekdays (06:00 Swiss time in summer, 05:00 in winter): catches
+  # Dynamics and maker-portal changes on Microsoft's side.
+  schedule:
+    - cron: '0 4 * * 1-5'
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      ENV_VAR_JSON:
+        required: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    # A newer push supersedes a run still going for an older one. Release and
+    # scheduled runs are never cancelled.
+    concurrency:
+      group: e2e-${{ github.ref }}-${{ github.event_name }}
+      cancel-in-progress: ${{ github.event_name == 'push' }}
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Mask the environment's details
+        env:
+          ENV_VAR_JSON: ${{ secrets.ENV_VAR_JSON }}
+        run: |
+          if [ -z "$ENV_VAR_JSON" ]; then
+            echo "::error::The ENV_VAR_JSON secret is not set — see playwright.env.example.json."
+            exit 1
+          fi
+          node -e '
+            const env = JSON.parse(process.env.ENV_VAR_JSON);
+            const values = Object.values(env).filter((v) => typeof v === "string" && v.length > 3);
+            if (env.CRM_URL) {
+              const host = new URL(env.CRM_URL).hostname;
+              values.push(host, host.split(".")[0]);
+            }
+            if (env.USER_NAME) values.push(env.USER_NAME.split("@")[0], env.USER_NAME.split("@")[1] ?? "");
+            for (const v of values.filter((v) => v.length > 3)) console.log(`::add-mask::${v}`);
+          '
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run end-to-end tests
+        env:
+          ENV_VAR_JSON: ${{ secrets.ENV_VAR_JSON }}
+        run: npx playwright test --reporter=list

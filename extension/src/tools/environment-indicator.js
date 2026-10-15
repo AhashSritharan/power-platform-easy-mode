@@ -373,16 +373,7 @@ export default {
                 flex: 0 0 44px; font-size: 11px; font-weight: 600;
                 color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px;
             }
-            .env-field > .ppt-input, .env-field > .env-ac-wrap { flex: 1; min-width: 0; }
-            .env-ac-wrap { position: relative; }
-            .env-ac {
-                display: none; position: absolute; top: 100%; left: 0; right: 0;
-                background: var(--bg); border: 1px solid var(--border); border-top: 0;
-                border-radius: 0 0 4px 4px; max-height: 160px; overflow-y: auto;
-                z-index: 10; box-shadow: var(--shadow);
-            }
-            .env-ac-item { padding: 6px 10px; font-size: 12px; cursor: pointer; }
-            .env-ac-item:hover { background: var(--bg2); }
+            .env-field > .ppt-input, .env-field > .ppt-ac-wrap { flex: 1; min-width: 0; }
         `);
 
         function openConfigDialog() {
@@ -586,38 +577,17 @@ export default {
                 ]);
             }
 
-            // `<datalist>` draws a browser-chrome popup that ignores the
-            // dialog's theme, so the group box gets a suggestion menu built the
-            // same way the field editor builds its lookups.
+            // The group box suggests the groups already in use.
             function groupSuggest(input) {
-                const menu = ui.el('div', { className: 'env-ac' });
-                const hide = () => { menu.style.display = 'none'; };
-                const show = () => {
-                    const text = input.value.trim().toLowerCase();
-                    const names = [...new Set(environments.map((e) => e.group).filter(Boolean))]
-                        .filter((name) => name.toLowerCase() !== text
-                            && (!text || name.toLowerCase().includes(text)))
-                        .sort((a, b) => a.localeCompare(b));
-                    menu.replaceChildren(...names.map((name) =>
-                        ui.el('div', { className: 'env-ac-item', textContent: name })));
-                    menu.style.display = names.length ? 'block' : 'none';
-                };
-                input.addEventListener('input', show);
-                input.addEventListener('focus', show);
-                // Later than the menu's own mousedown, so a click still lands.
-                input.addEventListener('blur', () => setTimeout(hide, 150));
-                menu.addEventListener('mousedown', (e) => {
-                    const item = e.target.closest('.env-ac-item');
-                    if (!item) return;
-                    e.preventDefault();          // keep focus in the input
-                    input.value = item.textContent;
-                    hide();
+                return ui.suggest({
+                    input,
+                    items: (text) => [...new Set(environments.map((e) => e.group).filter(Boolean))]
+                        .filter((name) => name.toLowerCase() !== text.toLowerCase()
+                            && (!text || name.toLowerCase().includes(text.toLowerCase())))
+                        .sort((a, b) => a.localeCompare(b))
+                        .map((name) => ({ label: name })),
+                    onPick: (item) => { input.value = item.label; },
                 });
-                return {
-                    node: ui.el('div', { className: 'env-ac-wrap' }, [input, menu]),
-                    isOpen: () => menu.style.display === 'block',
-                    hide,
-                };
             }
 
             function renderEditRow(env) {
@@ -717,7 +687,7 @@ export default {
         commands.register({
             toolId: 'environment-indicator',
             title: 'Configure Environment Indicator',
-            icon: '🏷️',
+            icon: '🏷️', svg: 'tag',
             run: openConfigDialog,
         });
 

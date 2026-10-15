@@ -32,10 +32,15 @@
 // parsePortalQuery — so this does not depend on the UI language.
 
 import { Dataverse } from '../core/dataverse.js';
-import { envIdFromUrl, getSite } from '../core/context.js';
+import { getSite } from '../core/context.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
-import { resolveOrgUrl } from './shared/flow-source.js';
+import { resolveCurrentOrg } from './shared/current-org.js';
+import {
+    installGridStyle, applySort, createMenus, menuItem, chip, sortChipText, headerButton, loadingBlock, errorMessage,
+} from './shared/grid.js';
+
+export { applySort };
 
 let store; // set in init()
 
@@ -259,17 +264,6 @@ export function buildQuery({ type, conditions = [], search = '', sort = [], colu
         + `&$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent(order.join(','))}`;
 }
 
-/**
- * Click on a column's sort: a plain click makes it the only sort, shift-click
- * adds it as the next key (or flips it if it is already one).
- */
-export function applySort(sort, column, dir, additive) {
-    if (!additive) return [{ column, dir }];
-    const existing = sort.findIndex((s) => s.column === column);
-    if (existing === -1) return [...sort, { column, dir }];
-    return sort.map((s, i) => (i === existing ? { column, dir } : s));
-}
-
 // ── Taking over from the portal ───────────────────────────────────────────
 //
 // Every portal "Add existing" panel lists its components with one query:
@@ -382,97 +376,12 @@ function formatCell(column, value) {
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────
+// The grid itself is shared (see shared/grid.js); only the rows already in the
+// target solution are styled here.
 
 const STYLE = `
-    .sae-backdrop {
-        position: fixed; inset: 0; background: rgba(0,0,0,0.3);
-        z-index: 2147483000; animation: ppt-fade 0.15s ease;
-    }
-    .sae-panel {
-        position: fixed; top: 0; right: 0; bottom: 0;
-        width: 82vw; min-width: 560px; max-width: 1400px;
-        background: var(--bg); display: flex; flex-direction: column;
-        box-shadow: -4px 0 24px rgba(0,0,0,0.18); animation: sae-slide 0.25s ease;
-    }
-    .sae-header, .sae-footer {
-        display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        padding: 12px 24px; flex-shrink: 0;
-    }
-    .sae-header { border-bottom: 1px solid var(--border); }
-    .sae-footer { border-top: 1px solid var(--border); background: var(--bg2); }
-    .sae-header h2 { margin: 0; font-size: 17px; font-weight: 600; }
-    .sae-toolbar {
-        display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-        padding: 12px 24px 0; flex-shrink: 0;
-    }
-    .sae-toolbar .ppt-input, .sae-toolbar .ppt-select, .sae-footer .ppt-select { width: auto; padding: 6px 10px; font-size: 13px; }
-    .sae-field { display: flex; flex-direction: column; gap: 2px; }
-    .sae-field > span { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
-    .sae-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 10px 24px 0; min-height: 10px; flex-shrink: 0; }
-    .sae-chip {
-        display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px;
-        border-radius: 12px; font-size: 12px; background: var(--bg2);
-        border: 1px solid var(--border); color: var(--text);
-    }
-    .sae-chip.sort { border-color: var(--accent); }
-    .sae-chip button {
-        border: none; background: none; color: var(--muted); cursor: pointer;
-        font-size: 13px; padding: 0 4px; border-radius: 8px;
-    }
-    .sae-chip button:hover { background: var(--border); }
-    .sae-link { border: none; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; padding: 2px 4px; }
-    .sae-content { flex: 1; overflow: auto; margin: 10px 24px 12px; border: 1px solid var(--border); border-radius: 6px; position: relative; }
-    .sae-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .sae-table th {
-        text-align: left; padding: 0; font-weight: 600; color: var(--muted);
-        font-size: 12px; border-bottom: 2px solid var(--border); background: var(--bg2);
-        white-space: nowrap; position: sticky; top: 0; z-index: 1;
-    }
-    .sae-th-btn {
-        display: flex; align-items: center; gap: 4px; width: 100%;
-        padding: 8px 10px; border: none; background: none; color: inherit;
-        font: inherit; cursor: pointer; text-align: left;
-    }
-    .sae-th-btn:hover { background: var(--border); }
-    .sae-th-btn .ind { color: var(--accent); font-size: 11px; }
-    .sae-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    .sae-table td.check, .sae-table th.check { width: 34px; text-align: center; padding: 6px 0; }
-    .sae-table tbody tr { cursor: pointer; }
-    .sae-table tbody tr:hover td { background: var(--bg2); }
-    .sae-table tbody tr.selected td { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
-    .sae-table tbody tr.in-target { cursor: default; }
-    .sae-table tbody tr.in-target td { color: var(--muted); }
-    .sae-mono { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
-    .sae-badge {
-        display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
-        font-weight: 600; background: var(--bg2); border: 1px solid var(--border); color: var(--muted);
-    }
-    .sae-dim { color: var(--muted); font-size: 12px; }
-    .sae-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 24px 10px; flex-shrink: 0; }
-    .sae-spinner {
-        display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
-        border: 2px solid var(--border); border-top-color: var(--accent);
-        border-radius: 50%; animation: sae-spin 0.7s linear infinite;
-    }
-    .sae-menu {
-        position: fixed; z-index: 2147483050; min-width: 220px; max-width: 320px;
-        background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-        box-shadow: var(--shadow); padding: 6px; font-size: 13px;
-    }
-    .sae-menu-item {
-        display: block; width: 100%; padding: 7px 10px; border: none; background: none;
-        color: var(--text); font: inherit; text-align: left; cursor: pointer; border-radius: 5px;
-    }
-    .sae-menu-item:hover { background: var(--bg2); }
-    .sae-menu hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
-    .sae-menu .ppt-input, .sae-menu .ppt-select { padding: 6px 8px; font-size: 13px; margin-bottom: 6px; }
-    .sae-menu-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; padding: 4px 6px 6px; }
-    .sae-colpick { max-height: 50vh; overflow-y: auto; }
-    .sae-colpick label { display: flex; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 5px; cursor: pointer; }
-    .sae-colpick label:hover { background: var(--bg2); }
-    .sae-footer label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
-    @keyframes sae-slide { from { transform: translateX(100%); } }
-    @keyframes sae-spin { to { transform: rotate(360deg); } }
+    .grid-table tbody tr.in-target { cursor: default; }
+    .grid-table tbody tr.in-target td { color: var(--muted); }
 `;
 
 // ── Environment ───────────────────────────────────────────────────────────
@@ -483,13 +392,11 @@ const STYLE = `
  */
 async function resolveContext(knownOrgUrl = null) {
     const solutionId = location.pathname.match(new RegExp(`/solutions/(${GUID.source})`, 'i'))?.[1]?.toLowerCase() ?? null;
-    if (getSite() === 'dynamics') return { dv: new Dataverse(), solutionId, envKey: location.host };
-    if (knownOrgUrl) return { dv: new Dataverse(knownOrgUrl), solutionId, envKey: new URL(knownOrgUrl).host };
-
-    const envId = envIdFromUrl();
-    const orgUrl = await resolveOrgUrl(envId, { purpose: 'its components can be listed and added' });
-    if (!orgUrl) return null;
-    return { dv: new Dataverse(orgUrl), solutionId, envKey: new URL(orgUrl).host };
+    if (knownOrgUrl && getSite() !== 'dynamics') {
+        return { dv: new Dataverse(knownOrgUrl), solutionId, envKey: new URL(knownOrgUrl).host };
+    }
+    const org = await resolveCurrentOrg({ purpose: 'its components can be listed and added' });
+    return org && { dv: org.dv, solutionId, envKey: org.host };
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────
@@ -587,12 +494,11 @@ async function openPanel(preset = null) {
     }
 
     // ── Layout ──
-    const backdrop = ui.mount(ui.el('div', { className: 'ppt sae-backdrop' }));
+    const backdrop = ui.mount(ui.el('div', { className: 'ppt grid-backdrop' }));
     let releaseEscape = () => {};
-    let closeMenu = () => {};
     const dispose = () => {
         panelOpen = false;
-        closeMenu();
+        menus.close();
         backdrop.remove();
         releaseEscape();
     };
@@ -606,31 +512,31 @@ async function openPanel(preset = null) {
         value: state.search,
     });
     const columnsButton = ui.el('button', { className: 'ppt-btn', textContent: '▦ Columns', title: 'Choose the columns shown' });
-    const chips = ui.el('div', { className: 'sae-chips' });
-    const content = ui.el('div', { className: 'sae-content' });
-    const status = ui.el('div', { className: 'sae-status' });
-    const selectedLabel = ui.el('span', { className: 'sae-dim' });
+    const chips = ui.el('div', { className: 'grid-chips' });
+    const content = ui.el('div', { className: 'grid-content' });
+    const status = ui.el('div', { className: 'grid-status' });
+    const selectedLabel = ui.el('span', { className: 'grid-dim' });
     const addButton = ui.el('button', { className: 'ppt-btn primary', textContent: 'Add to solution' });
     const requiredBox = ui.el('input', { type: 'checkbox' });
     const subcomponentsBox = ui.el('input', { type: 'checkbox' });
     const subcomponentsLabel = ui.el('label', { title: 'Tables only: add every column, form, view and relationship too, instead of the table alone' },
         [subcomponentsBox, 'Include all table objects']);
 
-    const panel = ui.el('div', { className: 'sae-panel' }, [
-        ui.el('div', { className: 'sae-header' }, [
+    const panel = ui.el('div', { className: 'grid-panel' }, [
+        ui.el('div', { className: 'grid-header' }, [
             ui.el('h2', { textContent: '➕ Add Existing Components' }),
             ui.el('button', { className: 'ppt-icon-btn', textContent: '✕', title: 'Close', onclick: dispose }),
         ]),
-        ui.el('div', { className: 'sae-toolbar' }, [
-            ui.el('label', { className: 'sae-field' }, [ui.el('span', { textContent: 'Add to' }), targetSelect]),
-            ui.el('label', { className: 'sae-field' }, [ui.el('span', { textContent: 'Component type' }), typeSelect]),
-            ui.el('label', { className: 'sae-field', style: 'flex:1' }, [ui.el('span', { textContent: 'Search' }), searchInput]),
-            ui.el('div', { className: 'sae-field' }, [ui.el('span', { innerHTML: '&nbsp;' }), columnsButton]),
+        ui.el('div', { className: 'grid-toolbar' }, [
+            ui.el('label', { className: 'grid-field' }, [ui.el('span', { textContent: 'Add to' }), targetSelect]),
+            ui.el('label', { className: 'grid-field' }, [ui.el('span', { textContent: 'Component type' }), typeSelect]),
+            ui.el('label', { className: 'grid-field', style: 'flex:1' }, [ui.el('span', { textContent: 'Search' }), searchInput]),
+            ui.el('div', { className: 'grid-field' }, [ui.el('span', { innerHTML: '&nbsp;' }), columnsButton]),
         ]),
         chips,
         content,
         status,
-        ui.el('div', { className: 'sae-footer' }, [
+        ui.el('div', { className: 'grid-footer' }, [
             selectedLabel,
             ui.el('div', { style: 'display:flex;align-items:center;gap:16px' }, [
                 subcomponentsLabel,
@@ -642,30 +548,8 @@ async function openPanel(preset = null) {
     backdrop.appendChild(panel);
 
     // ── Popover menus (column header, column picker) ──
-    function openMenu(anchor, build) {
-        closeMenu();
-        const menu = ui.el('div', { className: 'ppt sae-menu' });
-        build(menu, () => closeMenu());
-        backdrop.appendChild(menu);
-        const rect = anchor.getBoundingClientRect();
-        const left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8);
-        const top = rect.bottom + menu.offsetHeight + 8 > window.innerHeight
-            ? Math.max(8, rect.top - menu.offsetHeight - 4) : rect.bottom + 4;
-        menu.style.left = `${Math.max(8, left)}px`;
-        menu.style.top = `${top}px`;
-        const onDown = (e) => { if (!e.composedPath().includes(menu) && !e.composedPath().includes(anchor)) closeMenu(); };
-        const releaseMenuEscape = ui.onEscape(() => closeMenu());
-        setTimeout(() => backdrop.addEventListener('mousedown', onDown, true), 0);
-        closeMenu = () => {
-            menu.remove();
-            backdrop.removeEventListener('mousedown', onDown, true);
-            releaseMenuEscape();
-            closeMenu = () => {};
-        };
-        return menu;
-    }
-
-    const menuItem = (label, onClick) => ui.el('button', { className: 'sae-menu-item', textContent: label, onclick: onClick });
+    const menus = createMenus(backdrop);
+    const openMenu = menus.open;
 
     function openColumnMenu(anchor, column) {
         openMenu(anchor, (menu, close) => {
@@ -676,7 +560,7 @@ async function openPanel(preset = null) {
             menu.append(
                 menuItem('↑ Sort A to Z', sortBy('asc')),
                 menuItem('↓ Sort Z to A', sortBy('desc')),
-                ui.el('div', { className: 'sae-dim', style: 'padding:0 10px 4px', textContent: 'Shift-click to add as a secondary sort' }),
+                ui.el('div', { className: 'grid-dim', style: 'padding:0 10px 4px', textContent: 'Shift-click to add as a secondary sort' }),
                 ui.el('hr'),
             );
             menu.append(filterForm(column, close));
@@ -700,23 +584,26 @@ async function openPanel(preset = null) {
     function filterForm(column, close) {
         const kind = COLUMNS[column].kind;
         const form = ui.el('div', { style: 'padding:4px 6px' });
-        form.appendChild(ui.el('div', { className: 'sae-menu-title', style: 'padding:0 0 6px', textContent: `Filter by ${COLUMNS[column].label}` }));
+        form.appendChild(ui.el('div', { className: 'grid-menu-title', style: 'padding:0 0 6px', textContent: `Filter by ${COLUMNS[column].label}` }));
         const opSelect = ui.el('select', { className: 'ppt-select' },
             OPERATORS[kind].map(([value, label]) => ui.el('option', { value, textContent: label })));
         const valueInput = ui.el('input', {
             className: 'ppt-input', type: kind === 'date' ? 'date' : 'text',
             placeholder: kind === 'category' ? 'Type or pick a value' : 'Value',
         });
+        let valueField = valueInput;
         if (kind === 'category') {
             // Offer what is actually there — the loaded rows' distinct values.
-            const listId = `sae-values-${column}`;
-            const values = [...new Set(state.rows.map((r) => r[column]).filter((v) => v != null && v !== ''))].sort();
-            valueInput.setAttribute('list', listId);
-            form.appendChild(ui.el('datalist', { id: listId }, values.map((v) => ui.el('option', { value: String(v) }))));
+            const values = [...new Set(state.rows.map((r) => r[column]).filter((v) => v != null && v !== ''))].map(String).sort();
+            valueField = ui.suggest({
+                input: valueInput,
+                items: (text) => values.filter((v) => !text || v.toLowerCase().includes(text.toLowerCase())).map((v) => ({ label: v })),
+                onPick: (item) => { valueInput.value = item.label; },
+            }).node;
         }
         const syncValue = () => {
             const op = opSelect.value;
-            valueInput.style.display = needsValue(op) ? '' : 'none';
+            valueField.style.display = needsValue(op) ? '' : 'none';
             valueInput.type = op === 'lastdays' ? 'number' : kind === 'date' ? 'date' : 'text';
         };
         opSelect.addEventListener('change', syncValue);
@@ -730,14 +617,14 @@ async function openPanel(preset = null) {
             close(); reload();
         };
         valueInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
-        form.append(opSelect, valueInput, ui.el('button', { className: 'ppt-btn primary', style: 'width:100%', textContent: 'Apply filter', onclick: apply }));
+        form.append(opSelect, valueField, ui.el('button', { className: 'ppt-btn primary', style: 'width:100%', textContent: 'Apply filter', onclick: apply }));
         setTimeout(() => (needsValue(opSelect.value) ? valueInput : opSelect).focus(), 0);
         return form;
     }
 
     columnsButton.addEventListener('click', () => openMenu(columnsButton, (menu) => {
-        menu.appendChild(ui.el('div', { className: 'sae-menu-title', textContent: 'Columns' }));
-        const list = ui.el('div', { className: 'sae-colpick' });
+        menu.appendChild(ui.el('div', { className: 'grid-menu-title', textContent: 'Columns' }));
+        const list = ui.el('div', { className: 'grid-colpick' });
         // Columns this type never fills are listed last, so the useful ones
         // are not lost among the fields that only mean something for plug-ins.
         const filled = (c) => state.rows.some((r) => r[c] != null && r[c] !== '');
@@ -762,7 +649,7 @@ async function openPanel(preset = null) {
             const type = currentType();
             state.columns = [...(type.columns ?? DEFAULT_COLUMNS)];
             state.sort = [];
-            closeMenu(); reload();
+            menus.close(); reload();
         }));
     }));
 
@@ -770,26 +657,16 @@ async function openPanel(preset = null) {
     function renderChips() {
         chips.replaceChildren();
         state.conditions.forEach((condition, i) => {
-            chips.appendChild(ui.el('span', { className: 'sae-chip' }, [
-                ui.el('span', { textContent: describeCondition(condition) }),
-                ui.el('button', {
-                    textContent: '✕', title: 'Remove filter',
-                    onclick: () => { state.conditions.splice(i, 1); reload(); },
-                }),
-            ]));
+            chips.appendChild(chip(describeCondition(condition),
+                () => { state.conditions.splice(i, 1); reload(); }, { removeTitle: 'Remove filter' }));
         });
         state.sort.forEach((s, i) => {
-            chips.appendChild(ui.el('span', { className: 'sae-chip sort' }, [
-                ui.el('span', { textContent: `${state.sort.length > 1 ? `${i + 1}. ` : ''}${COLUMNS[s.column].label} ${s.dir === 'asc' ? '↑' : '↓'}` }),
-                ui.el('button', {
-                    textContent: '✕', title: 'Remove sort',
-                    onclick: () => { state.sort.splice(i, 1); saveView(); reload(); },
-                }),
-            ]));
+            chips.appendChild(chip(sortChipText(state.sort, i, COLUMNS[s.column].label),
+                () => { state.sort.splice(i, 1); saveView(); reload(); }, { sort: true, removeTitle: 'Remove sort' }));
         });
         if (state.conditions.length || state.sort.length || state.search) {
             chips.appendChild(ui.el('button', {
-                className: 'sae-link', textContent: 'Clear all',
+                className: 'grid-link', textContent: 'Clear all',
                 onclick: () => {
                     state.conditions = [];
                     state.sort = [];
@@ -811,8 +688,7 @@ async function openPanel(preset = null) {
             return;
         }
         if (state.loading && !state.rows.length) {
-            content.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:32px">'
-                + '<div class="sae-spinner"></div><span class="sae-dim">Loading components…</span></div>';
+            content.appendChild(loadingBlock('Loading components…'));
             return;
         }
         if (!state.rows.length) {
@@ -836,19 +712,11 @@ async function openPanel(preset = null) {
 
         const headRow = ui.el('tr', {}, [ui.el('th', { className: 'check' }, [allBox])]);
         for (const column of state.columns) {
-            const sortIndex = state.sort.findIndex((s) => s.column === column);
-            const filtered = state.conditions.some((c) => c.column === column);
-            const button = ui.el('button', { className: 'sae-th-btn', title: 'Sort and filter' }, [
-                ui.el('span', { textContent: COLUMNS[column].label }),
-                ui.el('span', {
-                    className: 'ind',
-                    textContent: (sortIndex === -1 ? '' : `${state.sort[sortIndex].dir === 'asc' ? '↑' : '↓'}${state.sort.length > 1 ? sortIndex + 1 : ''}`)
-                        + (filtered ? ' ⏷' : ''),
-                }),
-                ui.el('span', { style: 'margin-left:auto;opacity:0.6', textContent: '⌄' }),
-            ]);
-            button.addEventListener('click', () => openColumnMenu(button, column));
-            headRow.appendChild(ui.el('th', {}, [button]));
+            headRow.appendChild(ui.el('th', {}, [headerButton({
+                label: COLUMNS[column].label, sort: state.sort, column,
+                filtered: state.conditions.some((c) => c.column === column),
+                onClick: (button) => openColumnMenu(button, column),
+            })]));
         }
 
         const tbody = ui.el('tbody');
@@ -862,10 +730,10 @@ async function openPanel(preset = null) {
             state.columns.forEach((column, i) => {
                 const text = formatCell(column, row[column]) || (column === 'msdyn_displayname' ? row.msdyn_name : '');
                 const td = ui.el('td', {
-                    className: column === 'msdyn_name' || column === 'msdyn_schemaname' || column === 'msdyn_uniquename' ? 'sae-mono' : '',
+                    className: column === 'msdyn_name' || column === 'msdyn_schemaname' || column === 'msdyn_uniquename' ? 'grid-mono' : '',
                     textContent: text,
                 });
-                if (i === 0 && inTarget) td.append(' ', ui.el('span', { className: 'sae-badge', textContent: 'in solution' }));
+                if (i === 0 && inTarget) td.append(' ', ui.el('span', { className: 'grid-badge', textContent: 'in solution' }));
                 tr.appendChild(td);
             });
             if (!inTarget) {
@@ -888,7 +756,7 @@ async function openPanel(preset = null) {
             tbody.appendChild(tr);
         });
 
-        const table = ui.el('table', { className: 'sae-table' }, [ui.el('thead', {}, [headRow]), tbody]);
+        const table = ui.el('table', { className: 'grid-table' }, [ui.el('thead', {}, [headRow]), tbody]);
         const scrollTop = content.scrollTop;
         content.appendChild(table);
         content.scrollTop = scrollTop;
@@ -896,7 +764,7 @@ async function openPanel(preset = null) {
 
     function renderStatus() {
         status.replaceChildren(ui.el('span', {
-            className: 'sae-dim',
+            className: 'grid-dim',
             textContent: `${state.rows.length} loaded${state.nextLink ? ' — more available' : ''}`
                 + (state.inTarget.size ? ` · ${state.rows.filter((r) => state.inTarget.has(r.msdyn_objectid)).length} already in the solution` : ''),
         }));
@@ -1166,19 +1034,15 @@ function watchPortalPanel() {
     check();
 }
 
-/** The Dataverse message out of an HttpError body, or the error's own text. */
-function errorMessage(e) {
-    try { return JSON.parse(e.body)?.error?.message ?? e.message; } catch { return e.message; }
-}
-
 export default {
     init({ store: toolStore }) {
         store = toolStore;
+        installGridStyle();
         ui.addStyle('sae', STYLE);
         commands.register({
             toolId: 'solution-add-existing',
             title: 'Add Existing Components (filterable)',
-            icon: '➕',
+            icon: '➕', svg: 'addSquareMultiple',
             run: () => openPanel(),
         });
         if (getSite() === 'powerapps-maker') watchPortalPanel();

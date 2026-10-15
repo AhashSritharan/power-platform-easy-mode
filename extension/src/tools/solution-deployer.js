@@ -11,8 +11,10 @@
 // at 64 KiB — every solution larger than that was dropped by the browser before
 // it left, and the deploy sat at 0% waiting for an import job the platform had
 // never heard of.
+//
+// The SOURCE is the page's own org on Dynamics, and the environment in the URL
+// on the maker portals (see shared/current-org.js).
 
-import { Dataverse } from '../core/dataverse.js';
 import { request } from '../core/http.js';
 import { createStore } from '../core/storage.js';
 import * as ui from '../core/ui.js';
@@ -21,6 +23,8 @@ import {
     ENV_TYPES, backfillNames, envIndicatorStore, groupEnvironments,
     loadEnvironments, normalizeRecord,
 } from './shared/environments.js';
+import { resolveCurrentOrg } from './shared/current-org.js';
+import { fetchCanvasAppNames } from './shared/canvas-apps.js';
 
 const STYLE = `
     .sd-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 2147483000; animation: ppt-fade 0.15s ease; }
@@ -93,6 +97,7 @@ const STYLE = `
 `;
 
 let dv;
+let source; // { origin, host } of the org dv reads — set when the panel opens
 let store;
 const cfmStore = () => createStore('cloud-flow-manager');
 
@@ -139,7 +144,7 @@ async function loadIndicatorEnvironments() {
     // The current environment is normally matched by id; the host is the
     // fallback for when its id was never resolved on this page.
     const here = environments.find((env) => env.isCurrent)
-        ?? environments.find((env) => env.host === location.hostname.toLowerCase());
+        ?? environments.find((env) => env.host === source.host.toLowerCase());
     state.currentEnvGroup = here?.group ?? null;
     state.indicatorEnvs = environments.filter((env) => env !== here);
 }
@@ -373,13 +378,13 @@ const els = { panel: null, log: null, progressBar: null, progressLabel: null, el
 // genuine selection and then fails at export with "The given solution unique
 // name is not valid". The host keys them apart; it is also the right default
 // for the target, since each stage promotes to its own next one.
-const envScopedKey = (key) => `${key}:${location.hostname.toLowerCase()}`;
+const envScopedKey = (key) => `${key}:${source.host.toLowerCase()}`;
 const recall = (key, defaultValue) => store.get(envScopedKey(key), defaultValue);
 const remember = (key, value) => store.set(envScopedKey(key), value);
 
 async function resetState() {
     state = {
-        mode: 'deploy', step: 'select', deployMode: 'new',
+        mode: 'deploy', step: 'select', deployMode: 'existing',
         selectedPublisher: null,
         newSolutionId: '', newSolutionUniqueName: '', newSolutionDisplayName: '', newSolutionReady: false,
         existingSolutionId: '', existingSolutionName: '', existingSolutionDisplayName: '',
@@ -399,14 +404,13 @@ async function resetState() {
     state.savedTargets = await store.get('targetEnvironments', []);
     await loadIndicatorEnvironments();
 
-    const lastSolution = await recall('lastSolutionName', '');
+    const lastSolution = await findLastSolution();
     if (lastSolution) {
-        state.deployMode = 'existing';
-        state.existingSolutionId = await recall('lastSolutionId', '');
-        state.existingSolutionName = lastSolution;
-        state.existingSolutionDisplayName = await recall('lastSolutionDisplayName', '');
-        state.cleanupSolutionName = lastSolution;
-        state.depCheckSolutionName = lastSolution;
+        state.existingSolutionId = lastSolution.id;
+        state.existingSolutionName = lastSolution.name;
+        state.existingSolutionDisplayName = lastSolution.displayName;
+        state.cleanupSolutionName = lastSolution.name;
+        state.depCheckSolutionName = lastSolution.name;
         state.depCheckSolutionDisplayName = state.existingSolutionDisplayName;
     }
     const lastTarget = await recall('lastTargetUrl', '');
@@ -415,6 +419,28 @@ async function resetState() {
         state.depCheckTargetUrl = lastTarget;
         await applyImpersonationForTarget();
     }
+}
+
+// The remembered solution may since have been deleted, or (before keys were
+// env-scoped) come from another org. Only preselect it when this environment
+// still lists it among the deployable solutions; a failed lookup keeps it, so
+// a transient error does not wipe the preference.
+async function findLastSolution() {
+    const name = await recall('lastSolutionName', '');
+    if (!name) return null;
+    const remembered = {
+        id: await recall('lastSolutionId', ''),
+        name,
+        displayName: await recall('lastSolutionDisplayName', ''),
+    };
+    let solutions;
+    try { solutions = await searchSolutions(); } catch { return remembered; }
+    const match = solutions.find((s) => s.uniquename?.toLowerCase() === name.toLowerCase());
+    if (!match) {
+        await Promise.all(['lastSolutionName', 'lastSolutionId', 'lastSolutionDisplayName'].map((k) => remember(k, '')));
+        return null;
+    }
+    return { id: cleanGuid(match.solutionid), name: match.uniquename, displayName: match.friendlyname };
 }
 
 async function applyImpersonationForTarget() {
@@ -889,6 +915,55 @@ async function resolveMissingComponent(req, dep) {
     return null;
 }
 
+// Flows that a canvas app in the solution calls but the solution leaves out.
+// RetrieveMissingComponents never reports these — it only reads solution.xml's
+// <MissingDependencies> — yet the import resolves the app's flow reference by
+// primary key and can fail with "The dependent component Workflow (Id=…) does
+// not exist … CanvasApp" even when that very flow is on the target with the
+// same id. Shipping the flow alongside the app avoids the lookup, so these are
+// listed as missing whatever the target holds. Returned in the same shape as
+// the parsed MissingComponent rows so the table and "Add" buttons take them.
+async function findCanvasAppFlowsOutsideSolution(solutionName) {
+    const sol = await dv.get(`/solutions?$filter=uniquename eq '${odataQuote(solutionName)}'&$select=solutionid&$top=1`);
+    const solutionId = sol.value?.[0]?.solutionid;
+    if (!solutionId) return [];
+    const comps = await dv.get(`/solutioncomponents?$filter=_solutionid_value eq ${solutionId} and (componenttype eq 300 or componenttype eq 29)&$select=objectid,componenttype`);
+    const appIds = [];
+    const flowsInSolution = new Set();
+    for (const c of comps.value ?? []) {
+        if (c.componenttype === 300) appIds.push(c.objectid.toLowerCase());
+        else flowsInSolution.add(c.objectid.toLowerCase());
+    }
+
+    const flowToApp = new Map();
+    for (const appId of appIds) {
+        const deps = await dv.get(`/RetrieveRequiredComponents(ObjectId=${appId},ComponentType=300)`);
+        for (const d of deps.value ?? []) {
+            const flowId = d.requiredcomponentobjectid?.toLowerCase();
+            if (d.requiredcomponenttype !== 29 || !flowId || flowsInSolution.has(flowId) || flowToApp.has(flowId)) continue;
+            flowToApp.set(flowId, appId);
+        }
+    }
+    if (!flowToApp.size) return [];
+
+    const flowNames = new Map();
+    const flowIds = [...flowToApp.keys()];
+    for (let i = 0; i < flowIds.length; i += 10) {
+        const filter = flowIds.slice(i, i + 10).map((id) => `workflowid eq ${id}`).join(' or ');
+        const data = await dv.get(`/workflows?$select=workflowid,name&$filter=${filter}`);
+        for (const w of data.value ?? []) flowNames.set(w.workflowid.toLowerCase(), w.name);
+    }
+    const appNames = await fetchCanvasAppNames((path) => dv.get(path), [...new Set(flowToApp.values())]).catch(() => new Map());
+
+    return flowIds.map((flowId) => {
+        const appId = flowToApp.get(flowId);
+        return {
+            RequiredComponent: { Id: flowId, Type: 29, DisplayName: flowNames.get(flowId) || flowId, Solution: 'Not in solution (used by canvas app)' },
+            DependentComponent: { Id: appId, Type: 300, DisplayName: appNames.get(appId) || appId },
+        };
+    });
+}
+
 async function addMissingComponentToSolution(componentId, componentType) {
     return dv.send('POST', '/AddSolutionComponent', {
         ComponentId: componentId,
@@ -951,6 +1026,15 @@ async function runDependencyCheck() {
                     DependentComponent: parseComponentNode(children.find((c) => c.localName === 'DependentComponent')),
                 };
             });
+
+        try {
+            const reported = new Set(missing.map((mc) => mc.RequiredComponent?.Id?.toLowerCase()).filter(Boolean));
+            for (const row of await findCanvasAppFlowsOutsideSolution(state.depCheckSolutionName)) {
+                if (!reported.has(row.RequiredComponent.Id)) missing.push(row);
+            }
+        } catch (e) {
+            console.warn('[Solution Deployer] canvas-app flow check failed:', e);
+        }
 
         state.depCheckResults = missing;
         state.depCheckStatus = 'done';
@@ -1160,6 +1244,7 @@ function solutionPicker(title, loadSolutions, onPick) {
                         const item = ui.el('div', { className: 'sd-item' }, [
                             ui.el('strong', { textContent: s.friendlyname }),
                             ui.el('span', { style: 'color:var(--muted);font-size:11px', textContent: ` ${s.uniquename} v${s.version}` }),
+                            s.modifiedon ? ui.el('span', { style: 'color:var(--muted);font-size:11px;float:right', textContent: `modified ${new Date(s.modifiedon).toLocaleString()}` }) : '',
                         ]);
                         item.addEventListener('click', () => { close(); onPick(s); });
                         return item;
@@ -1180,7 +1265,7 @@ function solutionPicker(title, loadSolutions, onPick) {
 
 async function searchSolutions() {
     if (!solutionListCache) {
-        const data = await dv.get('/solutions?$filter=ismanaged eq false and isvisible eq true&$select=solutionid,friendlyname,uniquename,version&$orderby=friendlyname asc');
+        const data = await dv.get('/solutions?$filter=ismanaged eq false and isvisible eq true&$select=solutionid,friendlyname,uniquename,version,modifiedon&$orderby=modifiedon desc');
         solutionListCache = data.value ?? [];
     }
     return solutionListCache;
@@ -1219,7 +1304,7 @@ function confirmModal(buildBody, confirmButton, cancelLabel = 'Cancel') {
 }
 
 async function showDeployConfirmation() {
-    const sourceInfo = await getEnvInfoForUrl(location.origin);
+    const sourceInfo = await getEnvInfoForUrl(source.origin);
     const targetInfo = await getEnvInfoForUrl(state.targetEnvUrl);
     const solutionName = state.deployMode === 'existing'
         ? (state.existingSolutionDisplayName || state.existingSolutionName) : state.newSolutionDisplayName;
@@ -1238,7 +1323,7 @@ async function showDeployConfirmation() {
         modal.append(
             ui.el('h3', { style: 'margin:0 0 20px;font-size:18px;font-weight:600', textContent: 'Confirm Deployment' }),
             ui.el('div', { style: 'display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:20px;flex-wrap:wrap' }, [
-                envBox('SOURCE', location.hostname, sourceInfo),
+                envBox('SOURCE', source.host, sourceInfo),
                 ui.el('div', { style: 'display:flex;flex-direction:column;align-items:center;gap:4px' }, [
                     ui.el('div', {
                         className: 'sd-badge', textContent: solutionName, title: solutionName,
@@ -1283,7 +1368,7 @@ function showFlowsOffDialog() {
 }
 
 async function showCleanupConfirmation() {
-    const sourceInfo = await getEnvInfoForUrl(location.origin);
+    const sourceInfo = await getEnvInfoForUrl(source.origin);
     const targetInfo = await getEnvInfoForUrl(state.targetEnvUrl);
     let targetHostname = state.targetEnvUrl;
     try { targetHostname = new URL(state.targetEnvUrl).hostname; } catch { /* keep raw */ }
@@ -1342,7 +1427,18 @@ function closePanel() {
 
 async function openDeployer() {
     if (panelOpen) return;
-    panelOpen = true;
+    panelOpen = true; // claimed while the org is resolved
+
+    const org = await resolveCurrentOrg({ purpose: 'solutions can be deployed from it' });
+    if (!org) { panelOpen = false; return; }
+    // A maker-portal tab can move to another environment without reloading.
+    if (org.origin !== source?.origin) {
+        currentEnvIdCache = null;
+        sourceDependenciesCache = null;
+    }
+    ({ dv } = org);
+    source = { origin: org.origin, host: org.host };
+
     await resetState();
     backdrop = ui.mount(ui.el('div', { className: 'ppt sd-backdrop' }));
     backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) closePanel(); });
@@ -2122,7 +2218,7 @@ function renderFooter() {
             const deleteBtn = ui.el('button', { className: 'sd-btn-danger', textContent: '🗑️ Delete from Source' });
             deleteBtn.addEventListener('click', async () => {
                 const ok = await ui.confirmDialog(
-                    `Delete solution "${state.cleanupSolutionName}" from the SOURCE environment (${location.origin})? This cannot be undone.`,
+                    `Delete solution "${state.cleanupSolutionName}" from the SOURCE environment (${source.origin})? This cannot be undone.`,
                     { title: 'Delete from source', okLabel: 'Delete' });
                 if (!ok) return;
                 deleteBtn.disabled = true;
@@ -2148,9 +2244,8 @@ function renderFooter() {
 
 export default {
     init({ store: toolStore }) {
-        dv = new Dataverse();
         store = toolStore;
         ui.addStyle('sd', STYLE);
-        commands.register({ toolId: 'solution-deployer', title: 'Open Solution Deployer', icon: '🚀', run: openDeployer });
+        commands.register({ toolId: 'solution-deployer', title: 'Open Solution Deployer', icon: '🚀', svg: 'rocket', run: openDeployer });
     },
 };

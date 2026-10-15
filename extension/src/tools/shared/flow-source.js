@@ -13,7 +13,7 @@
 // It also needs the flow's workflowid, and the id in the URL is only sometimes
 // that: the solution explorer links a flow by its Dataverse workflowid, while
 // "My flows" links the same flow by the Flow service's own id for it, which
-// exists nowhere in Dataverse. Run Opener hit this too and resolved the
+// exists nowhere in Dataverse. Run Page Actions hit this too and resolved the
 // workflowid from the run record; with no run to read, `resolveFlowDefinition`
 // falls back to the flow's name and then to picking it from the environment.
 
@@ -89,18 +89,8 @@ export function flowNameFromPage() {
  * host-page popover passes them so this prompt does not dismiss it.
  */
 export async function resolveOrgUrl(envId, { detail, anchor, mountInto, purpose = 'the flow definition can be read' } = {}) {
-    const cache = await store.get('orgUrlCache', {});
-    if (envId && cache[envId]) return cache[envId];
-
-    if (envId) {
-        const hostCache = await envIndicatorStore.get('envIndicator_hostCache', {});
-        const host = Object.entries(hostCache).find(([, id]) => id === envId)?.[0];
-        if (host) {
-            cache[envId] = `https://${host}`;
-            await store.set('orgUrlCache', cache);
-            return cache[envId];
-        }
-    }
+    const known = await knownOrgUrl(envId);
+    if (known) return known;
 
     return new Promise((resolve) => {
         const input = ui.el('input', { className: 'ppt-input', type: 'url', placeholder: 'https://yourorg.crm.dynamics.com' });
@@ -130,13 +120,31 @@ export async function resolveOrgUrl(envId, { detail, anchor, mountInto, purpose 
             if (url && !url.startsWith('https://')) url = 'https://' + url;
             if (!/\.dynamics\.com/i.test(url)) { ui.toast('⚠️ Enter a *.dynamics.com URL'); return; }
             saved = url.replace(/\/$/, '').split('/main.aspx')[0];
-            if (envId) {
-                cache[envId] = saved;
-                await store.set('orgUrlCache', cache);
-            }
+            await rememberOrgUrl(envId, saved);
             close();
         }
     });
+}
+
+/** The Dynamics 365 URL already known for an environment, without asking; or null. */
+export async function knownOrgUrl(envId) {
+    if (!envId) return null;
+    const cache = await store.get('orgUrlCache', {});
+    if (cache[envId]) return cache[envId];
+
+    const hostCache = await envIndicatorStore.get('envIndicator_hostCache', {});
+    const host = Object.entries(hostCache).find(([, id]) => id === envId)?.[0];
+    if (!host) return null;
+    await rememberOrgUrl(envId, `https://${host}`);
+    return `https://${host}`;
+}
+
+/** Remembers an environment's Dynamics 365 URL for every tool that asks for it. */
+export async function rememberOrgUrl(envId, orgUrl) {
+    if (!envId) return;
+    const cache = await store.get('orgUrlCache', {});
+    cache[envId] = orgUrl;
+    await store.set('orgUrlCache', cache);
 }
 
 export async function clearOrgUrlCache() {

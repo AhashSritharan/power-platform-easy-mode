@@ -15,23 +15,31 @@ codebase, and all development happens there.
 | Tool | Where it runs | What it does |
 |---|---|---|
 | Environment Indicator | Everywhere | Colored DEV/TEST/PROD badge, environment labeling grouped by project & one-click switching |
-| Off-Status Highlighter | Maker portals | Highlights solution rows whose status is "Off" |
-| Audit Viewer | Dynamics 365 | Fast record change-history viewer via the Web API |
+| Turned-Off Highlighter | Maker portals | Highlights turned-off components (status "Off") in solution views |
+| Audit History | Dynamics 365 | Who changed what and when — audit history with old and new values, filtered by table, record, user, operation and date |
 | Deep Clone | Dynamics 365 | Clone records together with related child records — in place, or into another environment keeping the same GUID |
-| Field Editor | Dynamics 365 | Update any field, bypassing the form — including lookups |
-| Solution Deployer | Dynamics 365 | Deploy solutions between environments, check dependencies, clean up deployed solutions |
-| Solution Import Monitor | Dynamics 365 | Real-time progress of running solution imports and upgrades, with the failure log for each |
-| Solution Export History | Dynamics 365 | Every solution export the environment still holds — years of them — with one-click re-download of the original zip |
+| Record Editor | Dynamics 365 | View every value on a record and change any of them in place, bypassing the form — including lookups; file columns download and image columns show their thumbnail |
+| Record Browser | Dynamics 365 | Every record of a table with every column — no view to edit first. Opens on the view you are on (its columns first, its filter as a removable chip), searches all columns at once and highlights the matches, sorts on any column, filters with operators that fit each column type, hides empty columns, downloads files, shows image thumbnails, exports CSV, and opens a row in the Record Editor |
+| Solution Deployer | Dynamics 365 & maker portals | Deploy solutions between environments, check dependencies, clean up deployed solutions |
+| Solution History | Dynamics 365 & maker portals | Imports and exports in one panel: real-time progress of running solution imports and upgrades with the failure log for each, and every export the environment still holds — years of them — with one-click re-download of the original zip |
 | Add Existing Components | Dynamics 365 & Power Apps maker | The maker portal's "Add existing" with a real grid — sort on any column (several at once), filter any column with the usual operators, pick the columns, multi-select and add in one go; opens on the solution you are viewing in make.powerapps.com, and adds a "Filter & sort in Toolbox" button to the portal's own Add existing panel that reopens the same list here |
-| Cloud Flow Manager | Dynamics 365 | Enable/disable the cloud flows in a solution, individually or in bulk |
+| Cloud Flow Manager | Dynamics 365 & maker portals | Enable/disable the cloud flows in a solution, individually or in bulk |
 | Expression Validator | Power Automate | Finds flow expressions referencing missing actions/variables |
 | Find All References | Power Automate | `Shift+F12` on a step, trigger or variable — everything that references it (expressions, runAfter, variable writes) and everything it references back |
 | Parse JSON Schema Builder | Power Automate | Field picker + Parse JSON schema for a Dataverse List rows query — gets dynamic content back for records expanded with 1:N children, inserting fields at your cursor |
-| Flow Run Monitor | Dynamics 365 | Flow run filtering, statistics and visualization, plus an issue list that collapses parent→child failure cascades into one incident filed under the flow that actually broke — tracing up through ancestors that caught the error and reported success — and pivots them by flow, error, flow × error or caller |
-| Run Opener | Power Automate | "Open run" / "Open details" buttons on run pages |
-| Relationship Opener | Power Apps | "Manage relationship" from the Relationships page |
+| Flow Run Monitor | Dynamics 365 & maker portals | Flow run filtering, statistics and visualization, plus an issue list that collapses parent→child failure cascades into one incident filed under the flow that actually broke — tracing up through ancestors that caught the error and reported success — and pivots them by flow, error, flow × error or caller |
+| Run Page Actions | Power Automate | "Run tree", "Open run", "Re-run" and "Download" buttons on run pages |
+| Classic Relationship Dialog | Power Apps | "Manage Relationship" on the Relationships page, opening the classic relationship dialog |
 | Jira Clockify Timer | Jira Cloud | Start/stop a Clockify timer from a Jira issue, offering to move it to your working status and assign it to you when it is not already there |
 | Clockify → Dynamics 365 Sync | Dynamics 365 | Import Clockify time entries into Dynamics 365 |
+
+On the maker portals, the tools marked "maker portals" work on the environment in
+the URL: they call its Dataverse Web API through the extension's service worker,
+using your own Dynamics 365 session. The environment's Dynamics URL is read off
+the portal's own requests (or asked for once when it cannot be), and when the
+browser has no Dynamics session yet — the portals sign in with tokens, not
+cookies — one click opens the environment in a background tab so single sign-on
+can create one, then closes it again.
 
 **Add Existing Components** builds on two things Microsoft does not document:
 the `msdyn_solutioncomponentsummaries` virtual table the portal's own "Add
@@ -41,8 +49,10 @@ stops appearing or a component type stops loading — nothing else is affected.
 Please open an issue if you see that happen.
 
 Every tool's commands are reachable from the toolbar popup and from the
-**command palette** (`Alt+Shift+P` on any supported page). Individual tools can
-be switched on/off in the options page.
+**command palette** — open it with `Alt+Shift+P`, or with the small 🧰 tab on
+the right edge of every supported page (drag it up or down out of the way; hover
+it for a × to hide it, or turn it off in the options). Individual tools can be
+switched on/off in the options page.
 
 The two Clockify/Jira tools are **off by default** — they integrate with
 third-party services rather than the Power Platform, so switch them on in the
@@ -76,6 +86,7 @@ extension/
       ui.js                 shadow-DOM UI kit: modal, toast, palette, inputs
       caret.js              remembers the page field the user was in; inserts at their cursor
       commands.js           command registry (popup + palette)
+      launcher.js           floating 🧰 tab on the page that opens the palette
       agent.js              client for the page agent (network interception)
     agent/
       page-agent.js         MAIN-world script: on-demand fetch/XHR interception
@@ -87,7 +98,7 @@ Every tool is an ES module with `export default { init({ store, tool }) }`,
 loaded by `src/main.js` when its match patterns fit the page and it is enabled
 in the options. Tools build on `src/core/` for storage, HTTP/Dataverse, UI and
 command registration; the only MAIN-world code is the tiny page agent, used by
-Run Opener to observe the flow portal's own network responses on demand.
+Run Page Actions to observe the flow portal's own network responses on demand.
 Add Existing Components needs even less: it reads the URLs of the maker
 portal's own requests from the browser's Resource Timing entries — no
 responses, no headers, nothing patched in the page.
@@ -112,6 +123,7 @@ node scripts/smoke-test.mjs           # exercises the page agent end-to-end
 node scripts/caret-test.mjs           # exercises caret insertion into page fields
 node scripts/solution-import-test.mjs # exercises the deployer's import watcher
 node scripts/add-existing-test.mjs    # the component query builder and portal hand-off parser
+node scripts/record-browser-test.mjs  # the Record Browser FetchXML builder and column metadata
 node scripts/sensitive-scan.mjs       # no tenant ids, real org hosts, emails or secrets in tracked files
 ```
 
@@ -119,6 +131,38 @@ Then load the unpacked extension and exercise the affected tool on a real
 page. The release workflow runs the same checks and attaches the packaged
 extension zip to GitHub releases.
 
+### End-to-end tests
+
+[`tests/e2e/`](tests/e2e/) loads the unpacked extension into Playwright's
+Chromium and runs every tool against a developer environment: each panel opens
+and loads its data, every tool registers its commands on Dynamics and both
+maker portals, and the extension logged no error and none of its own requests
+failed. They only read — nothing is saved, cloned, deployed or switched — so
+they run headless, four browsers side by side, each loading the extension once.
+
+```
+npm install
+npx playwright install chromium
+cp playwright.env.example.json playwright.env.json   # then fill in the values
+npm run test:e2e
+npm run test:e2e -- --headed                         # watch the browsers
+npm run test:e2e:report                              # the HTML report, with traces of failures
+```
+
+Chromium starts signed out every time; Edge would sign in with the account
+connected to Windows, which is why it is not the default (`"BROWSER": "msedge"`
+still selects it). Without `USER_NAME` / `USER_PASSWORD` / `TOTP`, the first
+run opens a browser and waits for you to sign in; the session is saved to
+`playwright/.auth/user.json` and reused until it expires. In CI the same JSON comes from the `ENV_VAR_JSON`
+repository secret, for a test user with an authenticator-app MFA method, and
+the release workflow runs the tests before it builds the zip.
+
+`playwright.env.json`, the saved session and the test results name the tenant,
+the org and the user: they are gitignored, and the sensitive-data scan refuses
+them.
+
 ## License
 
 MIT
+
+Tool icons are from [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) by Microsoft, MIT licensed — see [extension/src/core/icons.LICENSE](extension/src/core/icons.LICENSE).

@@ -3,9 +3,9 @@
 // Gives native tools narrowly-scoped, on-demand access to page context that
 // the isolated world cannot reach. Two capabilities:
 //   • temporarily intercepting the page's fetch/XHR responses whose URL matches
-//     given substrings (used by Run Opener to capture action inputs/outputs the
+//     given substrings (used by Run Page Actions to capture action inputs/outputs the
 //     flow portal loads when "Show raw inputs/outputs" is clicked);
-//   • calling Xrm.Navigation.openForm (used by Field Editor to open the record
+//   • calling Xrm.Navigation.openForm (used by Record Editor to open the record
 //     behind a lookup value).
 //
 // Nothing is intercepted unless a tool starts a session, and everything is

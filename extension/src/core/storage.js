@@ -58,4 +58,12 @@ export const settings = {
     async isEnabled(toolId) {
         return isToolEnabled(toolId, await this.getEnabledMap());
     },
-};
+    /** Floating launcher: { hidden?: boolean, top?: fraction of the window height }. */
+    async getLauncher() {
+        const { launcher } = await callExtension(() => chrome.storage.local.get('launcher'), {});
+        return launcher ?? {};
+    },
+    async setLauncher(patch) {
+        const current = await this.getLauncher();
+        await callExtension(() => chrome.storage.local.set({ launcher: { ...current, ...patch } }));
+    },};

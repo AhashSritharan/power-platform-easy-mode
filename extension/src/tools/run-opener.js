@@ -1,4 +1,4 @@
-// Run Opener (native).
+// Run Page Actions (native).
 // Adds "Run tree", "Open run", "Re-run" and "Download" buttons to the Power
 // Automate run page toolbar:
 //   Run tree — shows the whole chain of connected runs (topmost trigger run
@@ -203,7 +203,7 @@ async function resolveCanvasAppName(appId, headerEnvId, runId) {
         }
         return { name: null, id: appId };
     } catch (e) {
-        console.warn('[Run Opener] canvas app name lookup failed:', e);
+        console.warn('[Run Page Actions] canvas app name lookup failed:', e);
         return { name: null, id: appId };
     }
 }
@@ -480,7 +480,7 @@ async function executeDownload() {
                 downloadBlob(fileParamToBlob(value), value.name || `${key}_file`);
                 await sleep(200);
             } catch (e) {
-                console.warn(`[Run Opener] could not download file ${key}:`, e);
+                console.warn(`[Run Page Actions] could not download file ${key}:`, e);
             }
         }
         ui.toast(`⬇ Downloaded parameters${fileParams.length ? ` + ${fileParams.length} file(s)` : ''}`);
@@ -564,7 +564,7 @@ async function checkAutoRunOnDetailsPage() {
                 allFileInputs[i].dispatchEvent(new Event('change', { bubbles: true }));
                 allFileInputs[i].dispatchEvent(new Event('input', { bubbles: true }));
             } catch (e) {
-                console.warn('[Run Opener] could not set file input:', e);
+                console.warn('[Run Page Actions] could not set file input:', e);
             }
             await sleep(50);
         }
@@ -583,7 +583,7 @@ async function checkAutoRunOnDetailsPage() {
 
         ui.toast('▶ Run panel pre-filled from the captured parameters. Review and hit Run.');
     } catch (e) {
-        console.error('[Run Opener] auto-run failed:', e);
+        console.error('[Run Page Actions] auto-run failed:', e);
     }
 }
 
@@ -732,8 +732,8 @@ function activate() {
 export default {
     init({ store: toolStore }) {
         store = toolStore;
-        commands.register({ toolId: 'run-opener', title: 'Activate Run Opener', icon: '▶', run: activate });
-        commands.register({ toolId: 'run-opener', title: 'Show run tree (connected runs)', icon: '🔀', run: executeRunTree });
+        commands.register({ toolId: 'run-opener', title: 'Show run page buttons', icon: '▶', svg: 'play', run: activate });
+        commands.register({ toolId: 'run-opener', title: 'Show run tree (connected runs)', icon: '🔀', svg: 'textBulletListTree', run: executeRunTree });
         const start = () => activate();
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
         else start();

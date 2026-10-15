@@ -1,0 +1,14 @@
+{
+    "name": "power-platform-toolbox",
+    "private": true,
+    "type": "module",
+    "description": "Dev tooling only — the extension itself has no build step and no dependencies.",
+    "scripts": {
+        "test:e2e": "playwright test",
+        "test:e2e:report": "playwright show-report"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.64.1",
+        "otpauth": "^9.5.2"
+    }
+}

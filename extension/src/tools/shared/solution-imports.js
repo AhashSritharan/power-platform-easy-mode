@@ -1,7 +1,7 @@
-// Solution Import Monitor (native).
-// Live side panel showing active solution operations (progress, elapsed time)
-// and recently completed ones, with a drill-down log viewer that renders
-// embedded XML error payloads as readable tables.
+// Solution History — the Imports tab (see ../solution-history.js).
+// Live view of active solution operations (progress, elapsed time) and
+// recently completed ones, with a drill-down log viewer that renders embedded
+// XML error payloads as readable tables.
 //
 // Two sources feed the panel, because neither one sees every operation:
 //   importjobs             — imports, with the component-level log XML.
@@ -11,41 +11,22 @@
 // Rows from both are merged into one chronological feed; an upgrade that ran as
 // an import appears in both tables, so those pairs are matched and shown once.
 
-import { Dataverse } from '../core/dataverse.js';
-import * as ui from '../core/ui.js';
-import * as commands from '../core/commands.js';
+import * as ui from '../../core/ui.js';
 
-let dataverse; // created in init() — modules must stay side-effect free at load
+// The org the mounted view reads. Set by mountImports — there is only ever one
+// Solution History panel open, and modules must stay side-effect free at load.
+let dataverse;
 
-const STYLE = `
+export const STYLE = `
     .sim-backdrop {
         position: fixed; inset: 0; background: rgba(0,0,0,0.3);
         z-index: 2147483000; animation: ppt-fade 0.15s ease;
     }
-    .sim-panel {
-        position: fixed; top: 0; right: 0; bottom: 0;
-        width: 60vw; min-width: 480px; max-width: 1000px;
-        background: var(--bg); display: flex; flex-direction: column;
-        box-shadow: -4px 0 24px rgba(0,0,0,0.18);
-        animation: sim-slide 0.25s ease;
-    }
-    .sim-header, .sim-footer {
+    .sim-header {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 14px 24px; flex-shrink: 0;
+        padding: 14px 24px; flex-shrink: 0; border-bottom: 1px solid var(--border);
     }
-    .sim-header { border-bottom: 1px solid var(--border); }
-    .sim-footer { border-top: 1px solid var(--border); background: var(--bg2); }
     .sim-header h2 { margin: 0; font-size: 17px; font-weight: 600; }
-    .sim-content { flex: 1; overflow-y: auto; padding: 16px 24px; }
-    .sim-live {
-        display: inline-flex; align-items: center; gap: 5px; margin-left: 10px;
-        background: #DFF6DD; color: #107C10; border: 1px solid #A7E3A5;
-        padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
-    }
-    .sim-live::before {
-        content: ""; width: 6px; height: 6px; border-radius: 50%;
-        background: #107C10; animation: sim-pulse 2s ease infinite;
-    }
     .sim-section { margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
     .sim-card {
         border: 1px solid var(--border); border-radius: 8px;
@@ -120,9 +101,7 @@ const STYLE = `
         background: var(--bg2); font-size: 11px; white-space: pre-wrap;
         overflow-wrap: anywhere; max-height: 260px; overflow: auto;
     }
-    @keyframes sim-slide { from { transform: translateX(100%); } }
     @keyframes sim-spin { to { transform: rotate(360deg); } }
-    @keyframes sim-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
     @keyframes sim-progress-slide { 0% { left: -30%; } 100% { left: 100%; } }
 `;
 
@@ -793,10 +772,7 @@ async function openImportLogViewer(row) {
 
 const openLogViewer = (row) => (row.job ? openImportLogViewer(row) : openHistoryDetail(row));
 
-// ── Side panel ────────────────────────────────────────────────────────────
-
-let panelOpen = false;
-let pollTimer = null;
+// ── Imports tab ───────────────────────────────────────────────────────────
 
 // An in-flight operation: an importjob (which reports a percentage) or a
 // solution-history row that has started but not ended (which does not).
@@ -864,8 +840,13 @@ function renderOperationsTable(rows) {
                 cell.appendChild(ui.el('span', {
                     className: `sim-badge ${row.status === 'success' ? 'ok' : 'fail'}`,
                     title: row.errorText,
-                    textContent: row.status === 'success' ? '✓ Success' : `✕ Failed${row.errorCode ? ` (${row.errorCode})` : ''}`,
+                    textContent: row.status === 'success' ? '✓ Success' : '✕ Failed',
                 }));
+                // On its own line: inside the badge, a ten-digit code pushed
+                // the Log column out of the panel.
+                if (row.status !== 'success' && row.errorCode) {
+                    cell.appendChild(ui.el('div', { className: 'sim-dim', style: 'font-size:11px;margin-top:2px', textContent: row.errorCode }));
+                }
                 return cell;
             })(),
             (() => {
@@ -881,12 +862,17 @@ function renderOperationsTable(rows) {
         tbody.appendChild(tr);
     }
     table.appendChild(tbody);
-    return ui.el('div', { style: 'border:1px solid var(--border);border-radius:6px;overflow:hidden' }, [table]);
+    return ui.el('div', { style: 'border:1px solid var(--border);border-radius:6px;overflow-x:auto' }, [table]);
 }
 
-function openMonitor() {
-    if (panelOpen) return;
-    panelOpen = true;
+/**
+ * Renders the Imports tab into `container`, reading from `dv`, and starts the
+ * live poll. Returns { refresh, dispose }; dispose stops the poll and makes
+ * any response still in flight a no-op.
+ */
+export function mountImports(container, dv) {
+    dataverse = dv;
+    let mounted = true;
 
     const state = {
         filters: { name: '', status: 'all', from: '', to: '' },
@@ -903,17 +889,6 @@ function openMonitor() {
     // Dead jobs never change, so parse each one's error once and keep it for the
     // panel's lifetime instead of re-fetching the log XML on every 3s poll.
     const deadCache = new Map(); // importjobid -> job with parsed .result
-
-    const backdrop = ui.mount(ui.el('div', { className: 'ppt sim-backdrop' }));
-    let releaseEscape = () => {};
-    const dispose = () => {
-        panelOpen = false;
-        clearInterval(pollTimer);
-        backdrop.remove();
-        releaseEscape();
-    };
-    releaseEscape = ui.onEscape(dispose);
-    backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) dispose(); });
 
     // ── Active section (re-rendered by the poll) ──
     const activeContainer = ui.el('div');
@@ -948,7 +923,7 @@ function openMonitor() {
         if (jobResult.status === 'fulfilled') ({ active, dead } = jobResult.value);
         else error = jobResult.reason.message;
         if (historyResult.status === 'fulfilled') runningHistory = historyResult.value;
-        if (!panelOpen) return;
+        if (!mounted) return;
 
         // A running upgrade shows up in both tables; the importjob wins because
         // only it reports a percentage.
@@ -972,7 +947,7 @@ function openMonitor() {
             if (!deadIds.has(id)) { deadCache.delete(id); deadChanged = true; }
         }
         for (const job of dead) {
-            if (deadCache.has(job.importjobid) || !panelOpen) continue;
+            if (deadCache.has(job.importjobid) || !mounted) continue;
             let result = { status: 'failure', errorCode: '', errorText: '' };
             try {
                 const full = await dataverse.get(`/importjobs(${job.importjobid})?$select=data`);
@@ -1116,7 +1091,7 @@ function openMonitor() {
             initial || state.nextLink ? fetchCompletedImports(state.filters, state.nextLink) : null,
             initial ? fetchCompletedHistory(state.filters) : null,
         ]);
-        if (seq !== state.seq || !panelOpen) return;
+        if (seq !== state.seq || !mounted) return;
 
         if (jobs.status === 'rejected') {
             state.error = jobs.reason.message;
@@ -1172,7 +1147,7 @@ function openMonitor() {
         });
     }
 
-    const content = ui.el('div', { className: 'sim-content' }, [
+    container.append(
         activeContainer,
         ui.el('div', { className: 'sim-section', style: 'margin-top:24px' }, [
             ui.el('span', { className: 'ppt-label', style: 'margin:0', textContent: 'Completed Operations' }),
@@ -1180,38 +1155,18 @@ function openMonitor() {
         ]),
         filterBar,
         completedContainer,
-    ]);
-
-    const panel = ui.el('div', { className: 'sim-panel' }, [
-        ui.el('div', { className: 'sim-header' }, [
-            ui.el('h2', {}, [
-                document.createTextNode('📦 Solution Import Monitor'),
-                ui.el('span', { className: 'sim-live', textContent: 'Live' }),
-            ]),
-            ui.el('button', { className: 'ppt-icon-btn', textContent: '✕', title: 'Close', onclick: dispose }),
-        ]),
-        content,
-        ui.el('div', { className: 'sim-footer' }, [
-            ui.el('span', { className: 'sim-dim', textContent: 'Active operations auto-refresh every 3 seconds' }),
-            ui.el('button', { className: 'ppt-btn', textContent: '🔄 Refresh now', onclick: () => { pollActive(); reloadCompleted(); } }),
-        ]),
-    ]);
-    backdrop.appendChild(panel);
+    );
 
     pollActive();
     reloadCompleted();
-    pollTimer = setInterval(pollActive, 3000);
-}
+    const pollTimer = setInterval(pollActive, 3000);
 
-export default {
-    init() {
-        dataverse = new Dataverse();
-        ui.addStyle('sim', STYLE);
-        commands.register({
-            toolId: 'solution-import-monitor',
-            title: 'Open Solution Import Monitor',
-            icon: '📦',
-            run: openMonitor,
-        });
-    },
-};
+    return {
+        refresh: () => { pollActive(); reloadCompleted(); },
+        dispose: () => {
+            mounted = false;
+            clearInterval(pollTimer);
+            clearTimeout(nameDebounce);
+        },
+    };
+}

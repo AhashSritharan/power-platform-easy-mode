@@ -13,3 +13,14 @@ power-platform-toolbox-extension.zip
 # Local denylist for scripts/sensitive-scan.mjs — it lists the very strings
 # that must not be committed, so it must not be committed either
 .sensitive-denylist
+
+# Dev dependencies (Playwright for the end-to-end tests)
+node_modules/
+
+# End-to-end test config, saved session and results — all name the tenant,
+# the org or the test user. Never commit.
+/playwright.env.json
+/playwright/.auth/user.json
+/test-results/
+/playwright-report/
+/playwright/.cache/

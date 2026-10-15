@@ -1,4 +1,4 @@
-// Solution Export History (native).
+// Solution History — the Exports tab (see ../solution-history.js).
 // Lists every solution export this environment still holds and re-downloads the
 // zip, however long ago it was taken.
 //
@@ -24,32 +24,13 @@
 // this is a standard table: server-side filtering and @odata.nextLink paging
 // both work, so the filter bar means what it says.
 
-import { Dataverse } from '../core/dataverse.js';
-import * as ui from '../core/ui.js';
-import * as commands from '../core/commands.js';
+import * as ui from '../../core/ui.js';
 
-let dataverse; // created in init() — modules must stay side-effect free at load
+// The org the mounted view reads. Set by mountExports — there is only ever one
+// Solution History panel open, and modules must stay side-effect free at load.
+let dataverse;
 
-const STYLE = `
-    .seh-backdrop {
-        position: fixed; inset: 0; background: rgba(0,0,0,0.3);
-        z-index: 2147483000; animation: ppt-fade 0.15s ease;
-    }
-    .seh-panel {
-        position: fixed; top: 0; right: 0; bottom: 0;
-        width: 58vw; min-width: 460px; max-width: 960px;
-        background: var(--bg); display: flex; flex-direction: column;
-        box-shadow: -4px 0 24px rgba(0,0,0,0.18);
-        animation: seh-slide 0.25s ease;
-    }
-    .seh-header, .seh-footer {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 14px 24px; flex-shrink: 0;
-    }
-    .seh-header { border-bottom: 1px solid var(--border); }
-    .seh-footer { border-top: 1px solid var(--border); background: var(--bg2); }
-    .seh-header h2 { margin: 0; font-size: 17px; font-weight: 600; }
-    .seh-content { flex: 1; overflow-y: auto; padding: 16px 24px; }
+export const STYLE = `
     .seh-section { margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
     .seh-filterbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
     .seh-filterbar .ppt-input, .seh-filterbar .ppt-select { width: auto; padding: 6px 10px; font-size: 13px; }
@@ -78,7 +59,6 @@ const STYLE = `
     }
     .seh-file { font-family: Consolas, monospace; font-size: 11px; color: var(--muted); word-break: break-all; }
     .seh-dim { color: var(--muted); font-size: 12px; }
-    @keyframes seh-slide { from { transform: translateX(100%); } }
     @keyframes seh-spin { to { transform: rotate(360deg); } }
 `;
 
@@ -180,13 +160,15 @@ export function downloadName(row) {
     return `${row.solution}_${stamp || 'export'}.zip`;
 }
 
-// ── Panel ─────────────────────────────────────────────────────────────────
+// ── Exports tab ───────────────────────────────────────────────────────────
 
-let panelOpen = false;
-
-function openPanel() {
-    if (panelOpen) return;
-    panelOpen = true;
+/**
+ * Renders the Exports tab into `container`, reading from `dv`. Returns
+ * { refresh, dispose }; dispose makes any response still in flight a no-op.
+ */
+export function mountExports(container, dv) {
+    dataverse = dv;
+    let mounted = true;
 
     const state = {
         filters: { name: '', from: '', to: '' },
@@ -197,16 +179,6 @@ function openPanel() {
         error: null,
         seq: 0, // discards out-of-order responses while typing
     };
-
-    const backdrop = ui.mount(ui.el('div', { className: 'ppt seh-backdrop' }));
-    let releaseEscape = () => {};
-    const dispose = () => {
-        panelOpen = false;
-        backdrop.remove();
-        releaseEscape();
-    };
-    releaseEscape = ui.onEscape(dispose);
-    backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) dispose(); });
 
     const countBadge = ui.el('span', { className: 'seh-badge', textContent: '…' });
     const listContainer = ui.el('div');
@@ -340,12 +312,12 @@ function openPanel() {
 
         try {
             const data = await fetchExports(state.filters, initial ? null : state.nextLink);
-            if (seq !== state.seq || !panelOpen) return;
+            if (seq !== state.seq || !mounted) return;
             state.rows.push(...(data.value ?? []).map(exportRow));
             state.nextLink = data['@odata.nextLink'] ?? null;
             if (data['@odata.count'] != null) state.total = data['@odata.count'];
         } catch (e) {
-            if (seq !== state.seq || !panelOpen) return;
+            if (seq !== state.seq || !mounted) return;
             state.error = e.message;
         } finally {
             if (seq === state.seq) {
@@ -375,38 +347,22 @@ function openPanel() {
         });
     }
 
-    const panel = ui.el('div', { className: 'seh-panel' }, [
-        ui.el('div', { className: 'seh-header' }, [
-            ui.el('h2', { textContent: '📥 Solution Export History' }),
-            ui.el('button', { className: 'ppt-icon-btn', textContent: '✕', title: 'Close', onclick: dispose }),
+    container.append(
+        ui.el('div', { className: 'seh-section' }, [
+            ui.el('span', { className: 'ppt-label', style: 'margin:0', textContent: 'Exports' }),
+            countBadge,
         ]),
-        ui.el('div', { className: 'seh-content' }, [
-            ui.el('div', { className: 'seh-section' }, [
-                ui.el('span', { className: 'ppt-label', style: 'margin:0', textContent: 'Exports' }),
-                countBadge,
-            ]),
-            filterBar,
-            listContainer,
-        ]),
-        ui.el('div', { className: 'seh-footer' }, [
-            ui.el('span', { className: 'seh-dim', textContent: 'Exports are kept by the environment for years.' }),
-            ui.el('button', { className: 'ppt-btn', textContent: '🔄 Refresh', onclick: reload }),
-        ]),
-    ]);
-    backdrop.appendChild(panel);
+        filterBar,
+        listContainer,
+    );
 
     reload();
-}
 
-export default {
-    init() {
-        dataverse = new Dataverse();
-        ui.addStyle('seh', STYLE);
-        commands.register({
-            toolId: 'solution-export-history',
-            title: 'Open Solution Export History',
-            icon: '📥',
-            run: openPanel,
-        });
-    },
-};
+    return {
+        refresh: reload,
+        dispose: () => {
+            mounted = false;
+            clearTimeout(nameDebounce);
+        },
+    };
+}

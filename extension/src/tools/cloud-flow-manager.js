@@ -10,13 +10,16 @@
 // The Solution Deployer hands off here after a deployment by writing
 // open_request into this tool's storage namespace; the tab on the matching
 // origin claims it and opens the panel with that solution pre-selected.
+//
+// On the maker portals the org is the environment in the URL (see
+// shared/current-org.js), and a solution page pre-selects its solution.
 
-import { Dataverse } from '../core/dataverse.js';
 import { request } from '../core/http.js';
 import { callExtension } from '../core/lifecycle.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
 import { loadEnvironments, resolveOrgName } from './shared/environments.js';
+import { resolveCurrentOrg } from './shared/current-org.js';
 
 const STATUS_LABELS = { 0: 'Off', 1: 'On' };
 const STATUS_COLORS = { 0: '#616161', 1: '#107C10' };
@@ -133,6 +136,7 @@ const STYLE = `
 `;
 
 let dv;
+let org; // { origin, host } of the org dv reads — set when the panel opens
 let store;
 
 const escapeHtml = (text) => {
@@ -157,7 +161,7 @@ function formatConnectorName(name) {
 }
 
 // ── Per-environment persisted settings ────────────────────────────────────
-const envKey = () => `env/${location.hostname}`;
+const envKey = () => `env/${org.host}`;
 async function getEnvData() { return store.get(envKey(), {}); }
 async function setEnvData(patch) {
     const merged = { ...(await getEnvData()), ...patch };
@@ -187,7 +191,7 @@ async function labelledEnvironments() {
     // Matched by id normally; by host for the case where this page never
     // resolved its own environment id.
     const here = environments.find((env) => env.isCurrent)
-        ?? environments.find((env) => env.host === location.hostname.toLowerCase());
+        ?? environments.find((env) => env.host === org.host.toLowerCase());
     return environments
         .filter((env) => env !== here)
         .map((env) => ({ ...env, sameGroup: !!here?.group && env.group === here.group }))
@@ -211,7 +215,7 @@ async function getCurrentUserId() {
 
 // GETs against the current org or (for DEV lookups) another org via the proxy
 async function apiGet(url) {
-    const target = url.startsWith('http') ? url : location.origin + url;
+    const target = url.startsWith('http') ? url : org.origin + url;
     const response = await request({
         url: target,
         headers: { 'OData-MaxVersion': '4.0', 'OData-Version': '4.0', 'Accept': 'application/json' },
@@ -397,7 +401,7 @@ async function updateWorkflowConnections(workflowId, connectionUpdates) {
 
 // ── Flow dependency analysis (RetrieveDependent/RequiredComponents) ───────
 async function fetchFlowDependencies(state, targetWorkflowId, maxDepth = 5, apiBaseUrlOverride = null) {
-    const apiBase = apiBaseUrlOverride || location.origin;
+    const apiBase = apiBaseUrlOverride || org.origin;
     const depGet = (path) => apiGet(apiBase + path);
 
     const result = { parents: [], children: [], canvasApps: [], targetFlowName: '', targetConnectors: [] };
@@ -594,7 +598,17 @@ let panelOpen = false;
 
 async function openCloudFlowManager(preselectSolutionUniqueName = null, { onDismiss = null } = {}) {
     if (panelOpen) return;
-    panelOpen = true;
+    panelOpen = true; // claimed while the org is resolved
+
+    const resolved = await resolveCurrentOrg({ purpose: 'its cloud flows can be listed and managed' });
+    if (!resolved) { panelOpen = false; return; }
+    // A maker-portal tab can move to another environment without reloading,
+    // and everything cached below belongs to one org.
+    if (resolved.origin !== org?.origin) {
+        environmentIdCache = whoAmICache = solutionsCache = null;
+    }
+    ({ dv } = resolved);
+    org = { origin: resolved.origin, host: resolved.host };
 
     const state = {
         solutionId: null, solutionName: null, solutionIsManaged: false,
@@ -1524,17 +1538,24 @@ async function openCloudFlowManager(preselectSolutionUniqueName = null, { onDism
     $('[data-act=bulk-on]').addEventListener('click', () => bulkToggle(true));
     $('[data-act=bulk-off]').addEventListener('click', () => bulkToggle(false));
 
-    // Initial load — optionally pre-select a solution handed off by the deployer
+    // Initial load — optionally pre-select a solution handed off by the deployer,
+    // or the one the maker-portal page is showing.
     const restored = await loadSolutions();
-    if (preselectSolutionUniqueName && solutionsCache) {
-        const match = solutionsCache.find((s) => s.uniquename?.toLowerCase() === preselectSolutionUniqueName.toLowerCase());
+    const urlSolutionId = location.pathname.match(/\/solutions\/([0-9a-f-]{36})/i)?.[1]?.toLowerCase();
+    const preselect = preselectSolutionUniqueName
+        ? (s) => s.uniquename?.toLowerCase() === preselectSolutionUniqueName.toLowerCase()
+        : urlSolutionId && ((s) => s.solutionid === urlSolutionId);
+    if (preselect && solutionsCache) {
+        const match = solutionsCache.find(preselect);
         if (match) {
             solutionSelect.value = match.solutionid;
             loadBtn.disabled = false;
             await setEnvData({ solutionId: match.solutionid });
             loadFlows();
-        } else {
+        } else if (preselectSolutionUniqueName) {
             ui.toast(`Solution "${preselectSolutionUniqueName}" not found in this environment`, 4500);
+        } else if (restored) {
+            loadFlows();
         }
     } else if (restored) {
         loadFlows();
@@ -1566,10 +1587,9 @@ async function claimOpenRequest(req) {
 
 export default {
     async init({ store: toolStore }) {
-        dv = new Dataverse();
         store = toolStore;
         ui.addStyle('cfm', STYLE);
-        commands.register({ toolId: 'cloud-flow-manager', title: 'Open Cloud Flow Manager', icon: '⚡', run: () => openCloudFlowManager() });
+        commands.register({ toolId: 'cloud-flow-manager', title: 'Open Cloud Flow Manager', icon: '⚡', svg: 'flow', run: () => openCloudFlowManager() });
         store.watch('open_request', (req) => claimOpenRequest(req));
         claimOpenRequest(await store.get('open_request', null));
     },

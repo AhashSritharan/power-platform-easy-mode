@@ -905,7 +905,8 @@ export default {
         chipCommand = commands.register({
             toolId: 'flow-schema-builder',
             title: 'Field button in the designer: off',
-            icon: '⌖',
+            icon: '⌖', svg: 'toggleRight',
+            kind: 'setting',
             run: async () => {
                 await store.set('showChip', !(await store.get('showChip', CHIP_DEFAULT)));
                 ui.toast(await applyChipSetting()

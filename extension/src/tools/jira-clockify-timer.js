@@ -687,7 +687,7 @@ export default {
         }
 
         commands.register({
-            toolId: 'jira-clockify-timer', title: 'Clockify timer settings', icon: '🕐', run: openTimerSettings,
+            toolId: 'jira-clockify-timer', title: 'Clockify timer settings', icon: '🕐', svg: 'timer', kind: 'setting', run: openTimerSettings,
         });
 
         // ── Timer button ─────────────────────────────────────────────────

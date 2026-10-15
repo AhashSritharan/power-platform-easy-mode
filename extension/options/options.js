@@ -41,6 +41,25 @@ async function setAll(isEnabled) {
     }
 }
 
+// ── Floating launcher (core/launcher.js) ──────────────────────────────────
+const LAUNCHER_KEY = 'launcher';
+const launcherToggle = document.getElementById('launcher-toggle');
+
+async function renderLauncher() {
+    const { [LAUNCHER_KEY]: launcher } = await chrome.storage.local.get(LAUNCHER_KEY);
+    launcherToggle.checked = !launcher?.hidden;
+}
+
+launcherToggle.addEventListener('change', async () => {
+    const { [LAUNCHER_KEY]: launcher } = await chrome.storage.local.get(LAUNCHER_KEY);
+    await chrome.storage.local.set({ [LAUNCHER_KEY]: { ...launcher, hidden: !launcherToggle.checked } });
+    hint.hidden = false;
+});
+// Hiding it from the page's own ✕ while this tab is open.
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && LAUNCHER_KEY in changes) renderLauncher();
+});
+
 document.getElementById('enable-all').addEventListener('click', () => setAll(true));
 document.getElementById('disable-all').addEventListener('click', () => setAll(false));
 
@@ -92,3 +111,4 @@ async function render() {
 }
 
 render();
+renderLauncher();

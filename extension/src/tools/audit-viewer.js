@@ -1,4 +1,4 @@
-// Audit Viewer (native).
+// Audit History (native).
 // Fast record change-history browser on the Dataverse audits table: filter by
 // entity, record, user, operation and date range; changes render as a compact
 // table with old/new values, optionset color pills and clickable lookup links.
@@ -6,6 +6,9 @@
 import { Dataverse } from '../core/dataverse.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
+import {
+    cleanGuid, fetchEntityInfo, fetchRecordDisplayName, fetchOptionsetColors, entityIconUrl, choiceColor,
+} from './shared/records.js';
 
 const PAGE_SIZE = 50;
 const OPERATION_LABELS = { 1: 'Create', 2: 'Update', 3: 'Delete', 4: 'Access' };
@@ -43,15 +46,6 @@ const STYLE = `
         padding: 2px 4px; border-radius: 3px; line-height: 1;
     }
     .audit-clear-x:hover { background: var(--bg); color: var(--text); }
-    .audit-dropdown {
-        display: none; position: absolute; top: 100%; left: 0; right: 0;
-        background: var(--bg); border: 1px solid var(--border);
-        border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto;
-        z-index: 10; box-shadow: var(--shadow);
-    }
-    .audit-dropdown-item { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--border); }
-    .audit-dropdown-item:hover { background: var(--bg2); }
-    .audit-dropdown-msg { padding: 10px 12px; font-size: 13px; color: var(--muted); }
     .audit-chip {
         padding: 5px 12px; font-size: 12px; font-weight: 600;
         border: 1px solid var(--border); border-radius: 16px;
@@ -77,7 +71,10 @@ const STYLE = `
     }
     .audit-link { color: var(--accent); text-decoration: none; font-weight: 600; }
     .audit-link:hover { text-decoration: underline; }
-    .audit-icon { width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; object-fit: contain; }
+    .audit-icon { width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; object-fit: contain;
+        /* Table icons are drawn for light backgrounds — keep them visible in dark mode. */
+        background: #fff; padding: 2px; border-radius: 3px; box-sizing: content-box;
+    }
     .audit-pill {
         display: inline-block; padding: 2px 8px; border-radius: 12px;
         font-size: 12px; font-weight: 500; white-space: nowrap;
@@ -101,13 +98,9 @@ let dv;
 
 // ── Caches ────────────────────────────────────────────────────────────────
 const attributeNameCache = {}; // entity -> { logicalName: displayLabel }
-const displayNameCache = {};   // "entity,guid" -> primary-name value
-const optionsetColorCache = {}; // "entity.attribute" -> { value: hexColor }
-const entityInfoCache = {};    // entity -> { displayName, primaryNameAttr, ... } | null
 let entityListCache = null;    // auditable entities
 
 // ── Small helpers ─────────────────────────────────────────────────────────
-const cleanGuid = (guid) => (guid ? guid.replace(/[{}]/g, '').toLowerCase() : '');
 const odataQuote = (s) => s.replace(/'/g, "''");
 
 function escapeHtml(text) {
@@ -144,12 +137,6 @@ function parseDateString(val) {
     return null;
 }
 
-function contrastText(hex) {
-    const clean = hex.replace('#', '');
-    const [r, g, b] = [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16));
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#000000' : '#ffffff';
-}
-
 const isoDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 // ── Metadata / lookup helpers ─────────────────────────────────────────────
@@ -163,7 +150,7 @@ async function fetchAttributeNames(entityName) {
         }
         return (attributeNameCache[entityName] = map);
     } catch (e) {
-        console.warn('[Audit Viewer] no metadata for', entityName, e);
+        console.warn('[Audit History] no metadata for', entityName, e);
         return {};
     }
 }
@@ -181,58 +168,8 @@ async function fetchAuditableEntities() {
         })).sort((a, b) => a.displayName.localeCompare(b.displayName));
         return entityListCache;
     } catch (e) {
-        console.warn('[Audit Viewer] could not list auditable entities', e);
+        console.warn('[Audit History] could not list auditable entities', e);
         return [];
-    }
-}
-
-async function fetchEntityInfo(entityName) {
-    if (!entityName) return null;
-    if (entityName in entityInfoCache) return entityInfoCache[entityName];
-    try {
-        const data = await dv.get(`/EntityDefinitions(LogicalName='${entityName}')?$select=LogicalName,DisplayName,PrimaryNameAttribute,PrimaryIdAttribute,EntitySetName,IconVectorName,IconSmallName`);
-        return (entityInfoCache[entityName] = {
-            displayName: data.DisplayName?.UserLocalizedLabel?.Label || data.LogicalName,
-            primaryNameAttr: data.PrimaryNameAttribute,
-            primaryIdAttr: data.PrimaryIdAttribute,
-            entitySetName: data.EntitySetName,
-            iconName: data.IconSmallName || data.IconVectorName || null,
-        });
-    } catch (e) {
-        console.warn('[Audit Viewer] no entity info for', entityName, e);
-        return (entityInfoCache[entityName] = null);
-    }
-}
-
-async function fetchRecordDisplayName(entityName, recordId) {
-    const cacheKey = `${entityName},${recordId}`;
-    if (displayNameCache[cacheKey]) return displayNameCache[cacheKey];
-    const info = await fetchEntityInfo(entityName);
-    if (!info?.entitySetName || !info.primaryNameAttr) return null;
-    try {
-        const data = await dv.get(`/${info.entitySetName}(${recordId})?$select=${info.primaryNameAttr}`);
-        const name = data[info.primaryNameAttr] ?? null;
-        if (name) displayNameCache[cacheKey] = name;
-        return name;
-    } catch {
-        return null;
-    }
-}
-
-async function fetchOptionsetColors(entityName, attributeName) {
-    const cacheKey = `${entityName}.${attributeName}`;
-    if (optionsetColorCache[cacheKey]) return optionsetColorCache[cacheKey];
-    const attrType = attributeName === 'statuscode' ? 'StatusAttributeMetadata'
-        : attributeName === 'statecode' ? 'StateAttributeMetadata' : 'PicklistAttributeMetadata';
-    try {
-        const data = await dv.get(`/EntityDefinitions(LogicalName='${entityName}')/Attributes(LogicalName='${attributeName}')/Microsoft.Dynamics.CRM.${attrType}?$select=LogicalName&$expand=OptionSet($select=Options)`);
-        const colors = {};
-        for (const option of data.OptionSet?.Options ?? []) {
-            if (option.Color) colors[String(option.Value)] = option.Color;
-        }
-        return (optionsetColorCache[cacheKey] = colors);
-    } catch {
-        return (optionsetColorCache[cacheKey] = {});
     }
 }
 
@@ -269,19 +206,17 @@ function buildUserLink(name, userId) {
 
 async function buildRecordLink(displayText, entityName, recordId) {
     const info = await fetchEntityInfo(entityName);
-    const icon = info?.iconName
-        ? `<img class="audit-icon" src="${escapeHtml(`${location.origin}/WebResources/${info.iconName}`)}" alt="">`
-        : '';
+    const iconUrl = entityIconUrl(info);
+    const icon = iconUrl ? `<img class="audit-icon" src="${escapeHtml(iconUrl)}" alt="">` : '';
     return `${icon}<a href="${escapeHtml(recordUrl(entityName, recordId))}" target="_blank" class="audit-link" title="Open ${escapeHtml(info?.displayName || entityName)} record">${escapeHtml(displayText)}</a>`;
 }
 
 function optionsetPill(label, value, colors) {
     if (!label && value == null) return '';
     const text = label || String(value);
-    const color = colors && value != null ? colors[String(value)] : null;
-    if (!color) return escapeHtml(text);
-    const hex = color.startsWith('#') ? color : `#${color}`;
-    return `<span class="audit-pill" style="background:${escapeHtml(hex)};color:${contrastText(hex)}">${escapeHtml(text)}</span>`;
+    const pill = choiceColor(colors, value);
+    if (!pill) return escapeHtml(text);
+    return `<span class="audit-pill" style="background:${escapeHtml(pill.background)};color:${pill.color}">${escapeHtml(text)}</span>`;
 }
 
 async function formatValueHtml(val) {
@@ -344,7 +279,7 @@ function openAuditViewer() {
     const panel = ui.el('div', { className: 'audit-panel' });
     panel.innerHTML = `
         <div class="audit-header">
-            <h2>🔍 Audit Viewer ${onRecord ? `<span class="audit-tag">${escapeHtml(filters.entityName)}</span>` : ''}</h2>
+            <h2>🔍 Audit History ${onRecord ? `<span class="audit-tag">${escapeHtml(filters.entityName)}</span>` : ''}</h2>
             <button class="ppt-icon-btn" data-act="close" title="Close (Esc)">✕</button>
         </div>
         <div class="audit-filters">
@@ -360,15 +295,13 @@ function openAuditViewer() {
                 </div>
                 <div class="audit-group" style="flex:1.5;min-width:180px">
                     <span class="ppt-label">Record</span>
-                    <input class="ppt-input" data-f="record" type="text" placeholder="Search by name…" autocomplete="off">
+                    <input class="ppt-input" data-f="record" type="text" placeholder="Search by name…">
                     <button class="audit-clear-x" data-act="clear-record" hidden>✕</button>
-                    <div class="audit-dropdown" data-dd="record"></div>
                 </div>`}
                 <div class="audit-group" style="flex:1;min-width:180px">
                     <span class="ppt-label">User</span>
-                    <input class="ppt-input" data-f="user" type="text" placeholder="Search user…" autocomplete="off">
+                    <input class="ppt-input" data-f="user" type="text" placeholder="Search user…">
                     <button class="audit-clear-x" data-act="clear-user" hidden>✕</button>
-                    <div class="audit-dropdown" data-dd="user"></div>
                 </div>
                 <div class="audit-group" style="min-width:120px">
                     <span class="ppt-label">Operation</span>
@@ -422,32 +355,23 @@ function openAuditViewer() {
     const footer = $('.audit-footer');
 
     // ── Typeahead dropdowns ──────────────────────────────────────────────
-    function wireTypeahead({ input, dropdown, clearBtn, search, onPick, onType }) {
-        let timer = null;
+    // Typing clears the picked value; picking sets it and shows the ✕.
+    function wireTypeahead({ input, clearBtn, search, onPick, onType }) {
+        const slot = input.nextSibling;
+        const picker = ui.suggest({
+            input, debounce: 350, minChars: 2, loading: 'Searching…', empty: 'No results found',
+            items: search,
+            onPick: (item) => {
+                input.value = item.label;
+                clearBtn.hidden = false;
+                onPick(item);
+            },
+        });
+        slot.before(picker.node);
         input.addEventListener('input', () => {
-            clearTimeout(timer);
             onType();
             clearBtn.hidden = true;
-            timer = setTimeout(async () => {
-                const text = input.value.trim();
-                const items = await search(text);
-                if (items === null) return; // search decided to hide/skip
-                dropdown.replaceChildren(...(items.length
-                    ? items.map((item) => {
-                        const node = ui.el('div', { className: 'audit-dropdown-item', textContent: item.name });
-                        node.addEventListener('mousedown', () => {
-                            input.value = item.name;
-                            clearBtn.hidden = false;
-                            dropdown.style.display = 'none';
-                            onPick(item);
-                        });
-                        return node;
-                    })
-                    : [ui.el('div', { className: 'audit-dropdown-msg', textContent: 'No results found' })]));
-                dropdown.style.display = 'block';
-            }, 350);
         });
-        input.addEventListener('blur', () => setTimeout(() => { dropdown.style.display = 'none'; }, 200));
         clearBtn.addEventListener('click', () => {
             input.value = '';
             clearBtn.hidden = true;
@@ -458,21 +382,13 @@ function openAuditViewer() {
     if (!onRecord) {
         wireTypeahead({
             input: $('[data-f=record]'),
-            dropdown: $('[data-dd=record]'),
             clearBtn: $('[data-act=clear-record]'),
             onType: () => { filters.recordId = ''; },
             onPick: (item) => { filters.recordId = item.id; },
             search: async (text) => {
                 const entityName = $('[data-f=entity]').value;
-                if (!entityName) {
-                    if (text.length >= 2) {
-                        $('[data-dd=record]').replaceChildren(ui.el('div', { className: 'audit-dropdown-msg', textContent: 'Select an entity first' }));
-                        $('[data-dd=record]').style.display = 'block';
-                    }
-                    return null;
-                }
-                if (text.length < 2) { $('[data-dd=record]').style.display = 'none'; return null; }
-                return searchRecords(entityName, text);
+                if (!entityName) return { message: 'Select an entity first' };
+                return (await searchRecords(entityName, text)).map((r) => ({ ...r, label: r.name }));
             },
         });
         $('[data-f=entity]').addEventListener('change', () => {
@@ -491,14 +407,10 @@ function openAuditViewer() {
 
     wireTypeahead({
         input: $('[data-f=user]'),
-        dropdown: $('[data-dd=user]'),
         clearBtn: $('[data-act=clear-user]'),
         onType: () => { filters.userId = ''; },
         onPick: (item) => { filters.userId = item.id; },
-        search: async (text) => {
-            if (text.length < 2) { $('[data-dd=user]').style.display = 'none'; return null; }
-            return searchUsers(text);
-        },
+        search: async (text) => (await searchUsers(text)).map((u) => ({ ...u, label: u.name })),
     });
 
     // ── Filter actions ───────────────────────────────────────────────────
@@ -555,7 +467,7 @@ function openAuditViewer() {
             pages.current++;
             renderResults();
         } catch (e) {
-            if (e.status !== 403) console.error('[Audit Viewer] fetch error:', e);
+            if (e.status !== 403) console.error('[Audit History] fetch error:', e);
             showError(e);
         }
     });
@@ -605,7 +517,7 @@ function openAuditViewer() {
         } catch (e) {
             // 403 = user can't read the audit table (no privilege or auditing off).
             // That's an expected user-state, not an extension error — don't shout in the console.
-            if (e.status !== 403) console.error('[Audit Viewer] fetch error:', e);
+            if (e.status !== 403) console.error('[Audit History] fetch error:', e);
             showError(e);
         }
     }
@@ -735,8 +647,8 @@ export default {
         ui.addStyle('audit', STYLE);
         commands.register({
             toolId: 'audit-viewer',
-            title: 'Open Audit Viewer',
-            icon: '📋',
+            title: 'Open Audit History',
+            icon: '📜', svg: 'documentSearch',
             run: openAuditViewer,
         });
     },

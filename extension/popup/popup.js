@@ -1,8 +1,11 @@
 // Popup: shows the menu commands registered by tools on the current tab as a
-// scannable icon grid, ordered by tool category.
-import { TOOLS, CATEGORY_ORDER } from '../src/registry.js';
+// scannable icon grid, grouped by area (see registry AREAS).
+import { groupByArea } from '../src/registry.js';
+import { icon } from '../src/core/icons.js';
 
-const toolCategory = new Map(TOOLS.map((t) => [t.id, t.category]));
+// The command's Fluent icon, or its emoji when it has none.
+const glyph = (command, size) => (command.svg && icon(command.svg, size)) || command.icon || '⚡';
+
 const content = document.getElementById('content');
 
 // Drop the redundant "Open " verb — the popup is already a launcher.
@@ -42,42 +45,58 @@ function renderCommands(tabId, commands) {
         return;
     }
 
-    // Cluster related tools by category (stable sort keeps registration order
-    // within a category), without per-tool headers — the icons do the anchoring.
-    const catRank = (toolId) => {
-        const index = CATEGORY_ORDER.indexOf(toolCategory.get(toolId));
-        return index === -1 ? CATEGORY_ORDER.length : index;
+    const invoke = async (command) => {
+        await chrome.tabs.sendMessage(tabId, { type: 'invoke-command', cmdId: command.cmdId });
+        window.close();
     };
-    const ordered = commands
-        .map((command, i) => ({ command, i }))
-        .sort((a, b) => catRank(a.command.toolId) - catRank(b.command.toolId) || a.i - b.i)
-        .map((entry) => entry.command);
-
-    const grid = document.createElement('div');
-    grid.className = 'grid';
-    for (const command of ordered) {
-        const tile = document.createElement('button');
-        tile.className = 'tile';
-        tile.title = command.caption; // full caption on hover
+    const tile = (command, color) => {
+        const button = document.createElement('button');
+        button.className = 'tile';
+        button.title = command.caption; // full caption on hover
+        button.style.setProperty('--tile', color);
 
         const icon = document.createElement('span');
         icon.className = 'tile-icon';
-        icon.textContent = command.icon || '⚡';
+        icon.append(glyph(command, 24));
 
         const label = document.createElement('span');
         label.className = 'tile-label';
         label.textContent = tileLabel(command.caption);
 
-        tile.append(icon, label);
-        tile.addEventListener('click', async () => {
-            await chrome.tabs.sendMessage(tabId, { type: 'invoke-command', cmdId: command.cmdId });
-            window.close();
-        });
-        grid.appendChild(tile);
-    }
+        button.append(icon, label);
+        button.addEventListener('click', () => invoke(command));
+        return button;
+    };
+    const header = (name, color) => {
+        const h = document.createElement('h2');
+        h.className = 'area';
+        h.textContent = name;
+        if (color) h.style.setProperty('--tile', color);
+        return h;
+    };
 
     content.innerHTML = '';
-    content.appendChild(grid);
+    for (const area of groupByArea(commands)) {
+        content.append(header(area.name, area.color));
+        if (area.id === 'settings') {
+            // Settings are rare and wordy: a plain list, not tiles.
+            const list = document.createElement('div');
+            list.className = 'settings';
+            for (const command of area.commands) {
+                const row = document.createElement('button');
+                row.className = 'setting';
+                row.append(glyph(command, 16), command.caption);
+                row.addEventListener('click', () => invoke(command));
+                list.appendChild(row);
+            }
+            content.appendChild(list);
+            continue;
+        }
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+        grid.append(...area.commands.map((c) => tile(c, area.color)));
+        content.appendChild(grid);
+    }
 }
 
 async function init() {

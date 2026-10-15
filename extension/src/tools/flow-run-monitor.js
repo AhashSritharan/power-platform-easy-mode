@@ -5,11 +5,11 @@
 // and CSV export. Runs open directly in Power Automate via the environment id
 // from RetrieveCurrentOrganization.
 
-import { Dataverse } from '../core/dataverse.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
 import { showConnectedRunsDialog, extractErrorMessage as extractRunError, isGenericError, resolveRunError, errorSignature, fetchRunsByNames } from './shared/run-tree.js';
 import { buildCanvasOriginResolver } from './shared/canvas-apps.js';
+import { resolveCurrentOrg } from './shared/current-org.js';
 
 const ANNOTATIONS = { Prefer: 'odata.include-annotations="*"' };
 
@@ -180,7 +180,8 @@ const STYLE = `
     @keyframes frm-spin { to { transform: rotate(360deg); } }
 `;
 
-let dv;
+let dv; // the org of the open panel — see openPanel
+let dvOrigin = null;
 let environmentIdCache = null;
 
 // ── Formatting helpers ────────────────────────────────────────────────────
@@ -644,9 +645,16 @@ export const truncate = (text, max) => (text.length > max ? `${text.slice(0, max
 // ── Panel ─────────────────────────────────────────────────────────────────
 let panelOpen = false;
 
-function openPanel() {
+async function openPanel() {
     if (panelOpen) return;
-    panelOpen = true;
+    panelOpen = true; // claimed while the org is resolved
+
+    const org = await resolveCurrentOrg({ purpose: 'its flow runs can be read' });
+    if (!org) { panelOpen = false; return; }
+    // A maker-portal tab can move to another environment without reloading.
+    if (org.origin !== dvOrigin) environmentIdCache = null;
+    dv = org.dv;
+    dvOrigin = org.origin;
 
     const filters = {
         status: '', workflowId: '', workflowName: '',
@@ -1611,8 +1619,7 @@ function openPanel() {
 
 export default {
     init() {
-        dv = new Dataverse();
         ui.addStyle('frm', STYLE);
-        commands.register({ toolId: 'flow-run-monitor', title: 'Open Flow Run Monitor', icon: '⚡', run: openPanel });
+        commands.register({ toolId: 'flow-run-monitor', title: 'Open Flow Run Monitor', icon: '📈', svg: 'pulse', run: openPanel });
     },
 };
