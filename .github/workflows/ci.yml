@@ -23,6 +23,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The container runs as root, the checkout belongs to the runner's user:
+      # git refuses the repository ("dubious ownership") until told it is safe.
+      # The sensitive-data scan lists files through git.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Install dependencies
         run: npm ci
 
