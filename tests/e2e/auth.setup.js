@@ -42,7 +42,9 @@ setup('authenticate', async () => {
 // incognito-style window of a new context the moment it reaches the org.
 async function withBrowser({ headless, storageState }, run) {
     const profileDir = mkdtempSync(join(tmpdir(), 'ppt-e2e-auth-'));
-    const context = await chromium.launchPersistentContext(profileDir, { channel: env.browser, headless, chromiumSandbox: true });
+    // Sandboxed locally (Edge warns without it); CI's container runs as root,
+    // where Chromium cannot sandbox.
+    const context = await chromium.launchPersistentContext(profileDir, { channel: env.browser, headless, chromiumSandbox: !process.env.CI });
     try {
         if (storageState) await context.addCookies(JSON.parse(readFileSync(storageState, 'utf8')).cookies);
         return await run(context, context.pages()[0] ?? await context.newPage());
