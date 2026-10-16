@@ -10,8 +10,12 @@ import { Dataverse } from '../core/dataverse.js';
 import { request, HttpError } from '../core/http.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
+import {
+    CLOCKIFY_API, loadClockifySettings, saveClockifySettings,
+    ROUNDING_BLOCKS, normalizeRounding, roundDuration, describeRounding,
+} from './shared/clockify-settings.js';
 
-const CLOCKIFY_API = 'https://api.clockify.me/api/v1';
+export { normalizeRounding, roundDuration };
 
 const STYLE = `
     .cs-loader {
@@ -112,7 +116,7 @@ async function clockify(endpoint) {
 async function ensureClockifyUserId() {
     if (!config.userId) {
         config.userId = (await clockify('/user')).id;
-        await store.set('clockify_user_id', config.userId);
+        await saveClockifySettings({ userId: config.userId });
     }
     return config.userId;
 }
@@ -275,34 +279,6 @@ export function mergeTimeEntries(entries) {
     }));
 }
 
-/** Block sizes durations can be rounded to; 0 is no rounding (the default). */
-const ROUNDING_BLOCKS = [0, 5, 10, 15, 30, 60];
-
-/**
- * A rounding setting as saved or typed, made safe to use: a block size from
- * ROUNDING_BLOCKS, and the minute into a block from which it rounds up
- * (1 … block; at the block size itself it only ever rounds down).
- */
-export function normalizeRounding(rounding) {
-    const block = Number(rounding?.block);
-    if (!ROUNDING_BLOCKS.includes(block) || block === 0) return { block: 0, roundUpFrom: 1 };
-    const from = Math.trunc(Number(rounding.roundUpFrom));
-    return { block, roundUpFrom: Number.isFinite(from) ? Math.min(Math.max(from, 1), block) : 1 };
-}
-
-/**
- * Minutes as they are imported: the started block is rounded up once it has
- * run for roundUpFrom minutes, and dropped below that (10-minute blocks from
- * 4: 14 → 20, 13 → 10).
- */
-export function roundDuration(minutes, rounding) {
-    const { block, roundUpFrom } = normalizeRounding(rounding);
-    if (!block) return minutes;
-    const started = minutes % block;
-    if (!started) return minutes;
-    return minutes - started + (started >= roundUpFrom ? block : 0);
-}
-
 /** Whole minutes an entry of `ms` is imported as. */
 const importedMinutes = (ms, rounding) => roundDuration(Math.round(ms / 60000), rounding);
 
@@ -382,12 +358,7 @@ function openSettings() {
         const { block, roundUpFrom } = readRounding();
         roundUpRow.style.display = block ? '' : 'none';
         roundUpInput.max = String(block || 1);
-        roundingExample.textContent = !block
-            ? 'Durations are imported to the minute, as tracked in Clockify.'
-            : roundUpFrom >= block
-                ? `Durations are rounded down to whole ${block}-minute blocks.`
-                : `${block + roundUpFrom} min → ${roundDuration(block + roundUpFrom, { block, roundUpFrom })} min`
-                    + (roundUpFrom > 1 ? `, ${block + roundUpFrom - 1} min → ${block} min` : '');
+        roundingExample.textContent = describeRounding({ block, roundUpFrom });
     };
     blockSelect.addEventListener('change', paintRounding);
     roundUpInput.addEventListener('input', paintRounding);
@@ -412,7 +383,7 @@ function openSettings() {
                     try {
                         const user = await clockify('/user');
                         config.userId = user.id;
-                        await store.set('clockify_user_id', user.id);
+                        await saveClockifySettings({ apiKey: config.apiKey, userId: user.id });
                         ui.toast(`✅ Connected as ${user.name}`);
                     } catch (e) {
                         ui.toast(`❌ Connection failed: ${e.message}`, 4500);
@@ -426,8 +397,7 @@ function openSettings() {
                     config.workspaceId = wsInput.value.trim();
                     config.timeEntrySettingsId = settingsInput.value.trim().replace(/[{}]/g, '');
                     config.rounding = readRounding();
-                    await store.set('clockify_api_key', config.apiKey);
-                    await store.set('clockify_workspace_id', config.workspaceId);
+                    Object.assign(config, await saveClockifySettings({ apiKey: config.apiKey, workspaceId: config.workspaceId }));
                     await store.set('clockify_timeentrysettings_id', config.timeEntrySettingsId);
                     await store.set('clockify_rounding', config.rounding);
                     close();
@@ -799,9 +769,7 @@ export default {
         store = toolStore;
         ui.addStyle('cs', STYLE);
         config = {
-            apiKey: await store.get('clockify_api_key', ''),
-            workspaceId: await store.get('clockify_workspace_id', ''),
-            userId: await store.get('clockify_user_id', ''),
+            ...await loadClockifySettings(),
             timeEntrySettingsId: await store.get('clockify_timeentrysettings_id', ''),
             rounding: normalizeRounding(await store.get('clockify_rounding', null)),
         };

@@ -24,6 +24,23 @@ test.describe('Clockify Sync settings', () => {
         await expect(dialog).toContainText('imported to the minute');
     });
 
+    test('uses the Clockify settings shared with setup and the Jira timer, and saves them there', async ({ page, org, serviceWorker }) => {
+        await serviceWorker.evaluate(() => chrome.storage.local.set({
+            'vals/clockify/api_key': 'shared-key',
+            'vals/clockify/workspace_id': 'shared-workspace',
+        }));
+        await gotoOrg(page, org);
+        await runCommand(page, 'Clockify Sync settings');
+        const dialog = page.locator('.ppt-dialog', { hasText: 'Clockify Sync Settings' });
+        await expect(dialog.locator('input[type="password"]')).toHaveValue('shared-key');
+        await expect(dialog.getByPlaceholder('From the workspace URL')).toHaveValue('shared-workspace');
+
+        await dialog.getByPlaceholder('From the workspace URL').fill('other-workspace');
+        await dialog.getByRole('button', { name: 'Save' }).click();
+        await expect.poll(() => saved(serviceWorker, 'vals/clockify/workspace_id')).toBe('other-workspace');
+        expect(await saved(serviceWorker, 'vals/clockify-sync/clockify_workspace_id')).toBeUndefined();
+    });
+
     test('rounds to the chosen block from the chosen minute, and remembers it', async ({ page, org, serviceWorker }) => {
         await gotoOrg(page, org);
         await runCommand(page, 'Clockify Sync settings');
@@ -33,7 +50,8 @@ test.describe('Clockify Sync settings', () => {
         await expect(dialog).toContainText('14 min → 20 min, 13 min → 10 min');
         await dialog.getByRole('button', { name: 'Save' }).click();
 
-        expect(await saved(serviceWorker, ROUNDING_KEY)).toEqual({ block: 10, roundUpFrom: 4 });
+        // Save is async: wait for it to land rather than read once.
+        await expect.poll(() => saved(serviceWorker, ROUNDING_KEY)).toEqual({ block: 10, roundUpFrom: 4 });
 
         await runCommand(page, 'Clockify Sync settings');
         const reopened = page.locator('.ppt-dialog', { hasText: 'Clockify Sync Settings' });

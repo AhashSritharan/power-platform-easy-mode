@@ -8,8 +8,7 @@
 import { request, HttpError } from '../core/http.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
-
-const API = 'https://api.clockify.me/api/v1';
+import { CLOCKIFY_API as API, loadClockifySettings, saveClockifySettings } from './shared/clockify-settings.js';
 
 // ── Status routing ──────────────────────────────────────────────────────────
 // At module scope, and free of the DOM, so tests/unit/jira-status-route.test.mjs
@@ -83,9 +82,7 @@ export async function walkToStatus({ key, target, routes = {}, getStatus, getTra
 export default {
     async init({ store }) {
         const config = {
-            apiKey: await store.get('clockify_api_key', ''),
-            workspaceId: await store.get('clockify_workspace_id', ''),
-            userId: await store.get('clockify_user_id', ''),
+            ...await loadClockifySettings(),
             projectMappings: await store.get('clockify_project_mappings', {}),
             statusMappings: await store.get('jira_status_mappings', {}),
             statusRoutes: await store.get('jira_status_routes', {}),
@@ -126,7 +123,7 @@ export default {
         async function ensureUserId() {
             if (!config.userId) {
                 config.userId = (await api('GET', '/user')).id;
-                await store.set('clockify_user_id', config.userId);
+                await saveClockifySettings({ userId: config.userId });
             }
             return config.userId;
         }
@@ -485,10 +482,10 @@ export default {
                 buttons: [{
                     label: 'Save', primary: true,
                     onClick: async (close) => {
-                        config.apiKey = keyInput.value.trim();
-                        config.workspaceId = wsInput.value.trim();
-                        await store.set('clockify_api_key', config.apiKey);
-                        await store.set('clockify_workspace_id', config.workspaceId);
+                        Object.assign(config, await saveClockifySettings({
+                            apiKey: keyInput.value.trim(),
+                            workspaceId: wsInput.value.trim(),
+                        }));
                         close();
                         ui.toast('✅ Clockify settings saved');
                         updateButtonState();
