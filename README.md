@@ -54,6 +54,15 @@ the right edge of every supported page (drag it up or down out of the way; hover
 it for a × to hide it, or turn it off in the options). Individual tools can be
 switched on/off in the options page.
 
+After installing, the welcome page walks through **setup** in one go: which
+tools to run, a DEV/TEST/PROD label for every environment you can access, and —
+if a Clockify tool is on — your Clockify key, workspace and duration rounding.
+The environments come from the Power Apps maker portal's own environment list,
+read in a background tab that closes again, so there is no need to visit each
+environment first. The labels are the ones the Environment Indicator shows and
+every environment picker offers; the Clockify settings are shared by both
+Clockify tools. Setup can be run again from the options page.
+
 The two Clockify/Jira tools are **off by default** — they integrate with
 third-party services rather than the Power Platform, so switch them on in the
 options page if you use them.

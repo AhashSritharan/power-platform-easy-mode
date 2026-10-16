@@ -6,7 +6,9 @@
 //   2. Open/close helper tabs on behalf of tools, incl. a background tab that
 //      signs in to a Dynamics org so the proxy has a session to send.
 //   3. Relay the command-palette keyboard shortcut to the active tab.
-//   4. Show the welcome page on first install.
+//   4. Show the welcome page — and with it setup — on first install.
+//   5. For setup: open the maker portal in a tab of its own to pick up the
+//      environments the user can access, then close it again.
 //
 // There is deliberately NO analytics, telemetry, or remote code here. The only
 // network requests are the ones tools make to the sites they integrate with.
@@ -139,6 +141,51 @@ async function warmSession(origin) {
     }
 }
 
+// ── Environment discovery (setup) ────────────────────────────────────────
+//
+// The maker portal lists the user's environments with its own token, which the
+// extension never holds. Setup asks for that list: the portal is opened in a
+// background tab with ?ppt-discover=1, its page agent hands the list to the
+// content script (src/core/agent.js), and that sends it here. When nothing
+// arrives for a while the portal is probably asking the user to sign in, so
+// the tab comes to the front; once the list is in, it closes and the setup tab
+// is shown again.
+const DISCOVERY_URL = 'https://make.powerapps.com/?ppt-discover=1';
+const DISCOVERY_FOREGROUND_MS = 15_000;
+const DISCOVERY_TIMEOUT_MS = 5 * 60_000;
+const discoveries = new Map(); // portal tab id -> (response) => void
+
+async function discoverEnvironments(openerTabId) {
+    const tab = await chrome.tabs.create({ url: DISCOVERY_URL, active: false });
+    let foreground = false;
+    return trackFetch(new Promise((resolve) => {
+        const finish = (result) => {
+            clearTimeout(foregroundTimer);
+            clearTimeout(timeoutTimer);
+            chrome.tabs.onRemoved.removeListener(onRemoved);
+            discoveries.delete(tab.id);
+            resolve(result);
+        };
+        function onRemoved(tabId) {
+            if (tabId === tab.id) finish({ ok: false, error: 'The maker portal tab was closed before it listed your environments.' });
+        }
+        const foregroundTimer = setTimeout(() => {
+            foreground = true;
+            chrome.tabs.update(tab.id, { active: true }).catch(() => { /* closed */ });
+        }, DISCOVERY_FOREGROUND_MS);
+        const timeoutTimer = setTimeout(() => {
+            finish({ ok: false, error: 'The maker portal did not list your environments in time.' });
+            chrome.tabs.remove(tab.id).catch(() => { /* closed */ });
+        }, DISCOVERY_TIMEOUT_MS);
+        chrome.tabs.onRemoved.addListener(onRemoved);
+        discoveries.set(tab.id, (response) => {
+            finish({ ok: true, response });
+            chrome.tabs.remove(tab.id).catch(() => { /* closed */ });
+            if (foreground && openerTabId != null) chrome.tabs.update(openerTabId, { active: true }).catch(() => { /* closed */ });
+        });
+    }));
+}
+
 // ── Messages from content scripts ────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -156,6 +203,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case 'warm-session':
             warmSession(msg.origin).then(sendResponse);
             return true;
+
+        case 'discover-environments':
+            discoverEnvironments(sender.tab?.id).then(sendResponse);
+            return true;
+
+        // Only the portal tab discovery opened may answer it.
+        case 'environments-discovered':
+            discoveries.get(sender.tab?.id)?.(msg.response);
+            sendResponse({ ok: true });
+            return false;
 
         case 'close-tab':
             chrome.tabs.remove(msg.tabId).catch(() => { /* already closed */ });

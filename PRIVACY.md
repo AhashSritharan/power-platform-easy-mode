@@ -30,6 +30,7 @@ ones individual tools make **on your behalf, to services you already use**:
 |---|---|---|
 | Your Dynamics 365 / Dataverse environments (`*.dynamics.com`) | Using Dynamics 365 tools | Reading/writing the data the tool works on, using your existing browser session |
 | Power Apps / Power Automate maker portals (`*.powerapps.com`, `*.powerautomate.com`) | Using Power Platform tools | Same as above |
+| Power Apps maker portal (`make.powerapps.com`) | Only when you click "Find my environments" in setup | The portal is opened in a background tab and loads its own list of the environments you can access; the extension keeps the names and addresses from that list in local storage, then closes the tab |
 | Jira Cloud (`*.atlassian.net`) | Using the Jira Clockify Timer | Reading the issue you are viewing |
 | Clockify API (`api.clockify.me`) | Only if you configure a Clockify API key | Starting/stopping timers and reading time entries in **your** Clockify workspace |
 

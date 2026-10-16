@@ -4,6 +4,7 @@
 // to break with a change to the background script or the host allowlist.
 import { test, expect } from './fixtures.js';
 import { environmentId, expectLoaded, expectedTools, gotoDynamics, pageCommands, runCommand } from '../support/helpers.js';
+import { env } from '../support/env.js';
 
 let envId;
 
@@ -45,6 +46,19 @@ test.describe('Maker portals', () => {
         // Labels follow the browser's language; the test keys do not.
         await expect(page.locator('[data-test-key="ShowDependencies"]')).toBeVisible();
         await expect(page.locator('#ppt-manage-rel-item [data-test-key="ManageRelationship"]')).toBeVisible();
+    });
+
+    // Setup reads the user's environments from the portal's own environment
+    // list, in a portal tab of its own. Read-only: the labels are not saved.
+    test('setup finds this environment through the maker portal', async ({ page, extensionId, extensionContext }) => {
+        await page.goto(`chrome-extension://${extensionId}/welcome/welcome.html`);
+        await page.getByRole('button', { name: 'Next' }).click();
+        await page.getByRole('button', { name: 'Find my environments' }).click();
+        await expect(page.locator('#env-status')).toContainText('found', { timeout: 120_000 });
+        const hosts = await page.locator('.env-row .env-host').allTextContents();
+        expect(hosts.some((host) => host.startsWith(`${new URL(env.crmUrl).host} `) || host === new URL(env.crmUrl).host),
+            'the test environment is among those found').toBe(true);
+        await expect.poll(() => extensionContext.pages().filter((p) => p.url().includes('ppt-discover')).length, { message: 'the portal tab is closed again' }).toBe(0);
     });
 
     test('make.powerapps.com: Solution History loads through the proxy', async ({ page }) => {

@@ -76,3 +76,21 @@ export function openRecordForm(entityName, entityId, { newWindow = true, timeout
             window.location.origin);
     });
 }
+
+/**
+ * On the portal tab setup opened for environment discovery: resolves with the
+ * portal's environment list once the page agent has it. Asks once in case it
+ * arrived before this script was listening.
+ */
+export function discoveredEnvironments() {
+    return new Promise((resolve) => {
+        function listener(event) {
+            if (event.source !== window || event.data?.__ppt_agent !== TO_CONTENT) return;
+            if (event.data.type !== 'discover-result') return;
+            window.removeEventListener('message', listener);
+            resolve(event.data.json);
+        }
+        window.addEventListener('message', listener);
+        window.postMessage({ __ppt_agent: TO_PAGE, type: 'discover-get' }, window.location.origin);
+    });
+}

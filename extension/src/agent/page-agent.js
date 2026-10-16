@@ -1,12 +1,14 @@
 // Page agent (MAIN world).
 //
 // Gives native tools narrowly-scoped, on-demand access to page context that
-// the isolated world cannot reach. Two capabilities:
+// the isolated world cannot reach. Three capabilities:
 //   • temporarily intercepting the page's fetch/XHR responses whose URL matches
 //     given substrings (used by Run Page Actions to capture action inputs/outputs the
 //     flow portal loads when "Show raw inputs/outputs" is clicked);
 //   • calling Xrm.Navigation.openForm (used by Record Editor to open the record
-//     behind a lookup value).
+//     behind a lookup value);
+//   • handing over the maker portal's environment list once, on the portal tab
+//     setup opens with ?ppt-discover=1 (see environment-discovery.js).
 //
 // Nothing is intercepted unless a tool starts a session, and everything is
 // restored when the session stops. Data goes only to this extension's
@@ -35,6 +37,8 @@
             session = null;
         } else if (msg.type === 'open-form') {
             openForm(msg);
+        } else if (msg.type === 'discover-get' && discovered) {
+            post({ type: 'discover-result', json: discovered });
         }
     });
 
@@ -54,15 +58,14 @@
         }
     }
 
-    function installInterceptor(id, patterns) {
+    function installInterceptor(id, patterns, capture = (url, json) => post({ type: 'intercept-capture', id, url, json })) {
         const matches = (url) => patterns.some((pattern) => url.includes(pattern));
-        const capture = (url, json) => post({ type: 'intercept-capture', id, url, json });
 
         const originalFetch = window.fetch;
         const originalOpen = window.XMLHttpRequest.prototype.open;
         const originalSend = window.XMLHttpRequest.prototype.send;
 
-        window.fetch = async function (...args) {
+        const patchedFetch = async function (...args) {
             const response = await originalFetch.apply(this, args);
             const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url ?? String(args[0] ?? ''));
             if (matches(url)) {
@@ -71,13 +74,15 @@
             }
             return response;
         };
+        window.fetch = patchedFetch;
 
-        window.XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        const patchedOpen = function (method, url, ...rest) {
             this.__pptUrl = String(url);
             return originalOpen.apply(this, [method, url, ...rest]);
         };
+        window.XMLHttpRequest.prototype.open = patchedOpen;
 
-        window.XMLHttpRequest.prototype.send = function (...args) {
+        const patchedSend = function (...args) {
             if (this.__pptUrl && matches(this.__pptUrl)) {
                 const trackedUrl = this.__pptUrl;
                 this.addEventListener('load', function () {
@@ -87,11 +92,30 @@
             }
             return originalSend.apply(this, args);
         };
+        window.XMLHttpRequest.prototype.send = patchedSend;
 
+        // Only undo our own patch: another session may have wrapped it since.
         return function cleanup() {
-            window.fetch = originalFetch;
-            window.XMLHttpRequest.prototype.open = originalOpen;
-            window.XMLHttpRequest.prototype.send = originalSend;
+            if (window.fetch === patchedFetch) window.fetch = originalFetch;
+            const proto = window.XMLHttpRequest.prototype;
+            if (proto.open === patchedOpen) proto.open = originalOpen;
+            if (proto.send === patchedSend) proto.send = originalSend;
         };
+    }
+
+    // ── Environment discovery ─────────────────────────────────────────────
+    // Setup opens make.powerapps.com/?ppt-discover=1 in a tab of its own. The
+    // portal loads its environment list with its own token; the first such
+    // response is kept for the content script, then fetch/XHR are put back.
+    // The param and URL part are DISCOVERY_PARAM and DISCOVERY_PATTERN in
+    // src/tools/shared/environment-discovery.js — this script cannot import.
+    let discovered = null;
+    if (window.location.hostname === 'make.powerapps.com' && new URLSearchParams(window.location.search).has('ppt-discover')) {
+        const stop = installInterceptor('discover', ['/powerapps/environments?'], (url, json) => {
+            if (discovered || !Array.isArray(json?.value)) return;
+            discovered = json;
+            stop();
+            post({ type: 'discover-result', json });
+        });
     }
 })();

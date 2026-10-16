@@ -43,6 +43,7 @@ header {
 
 header h1 { margin: 0; font-size: 20px; }
 header .sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+header .sub a { color: var(--accent); }
 header > div:nth-child(2) { flex: 1; }
 
 .bulk { display: flex; gap: 8px; }

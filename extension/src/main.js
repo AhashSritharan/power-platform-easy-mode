@@ -9,6 +9,8 @@ import * as commands from './core/commands.js';
 import { openPalette, toast } from './core/ui.js';
 import { RELOAD_HINT, onExtensionInvalidated } from './core/lifecycle.js';
 import { showLauncher } from './core/launcher.js';
+import { discoveredEnvironments } from './core/agent.js';
+import { DISCOVERY_PARAM } from './tools/shared/environment-discovery.js';
 
 const tools = new Map(TOOLS.map((t) => [t.id, t]));
 
@@ -79,6 +81,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Reloading/updating the extension orphans this script. Tools then fail soft,
 // but the user still needs to know why the toolbox stopped reacting.
 onExtensionInvalidated(() => toast(RELOAD_HINT, 8000));
+
+// The portal tab setup opened to find the user's environments: pass the list on.
+if (location.hostname === 'make.powerapps.com' && new URLSearchParams(location.search).has(DISCOVERY_PARAM)) {
+    discoveredEnvironments().then((response) => chrome.runtime.sendMessage({ type: 'environments-discovered', response }))
+        .catch((e) => console.error('[Power Platform Toolbox] environment discovery failed:', e));
+}
 
 // The launcher only shows where some tool has something to offer.
 loadTools().then(() => {

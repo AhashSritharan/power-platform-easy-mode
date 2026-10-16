@@ -12,8 +12,105 @@
             <img src="../icons/icon128.png" alt="" width="72" height="72">
             <h1>Power Platform Toolbox</h1>
             <p class="tagline">Developer tools for Dynamics 365, Power Platform, Jira &amp; Clockify —
-            right inside the pages you already work in.</p>
+            right inside the pages you already work in. A few choices and you are ready.</p>
         </header>
+
+        <section class="setup" aria-label="Setup">
+            <ol class="stepper" id="stepper"></ol>
+
+            <!-- 1. Tools -->
+            <div class="step" data-step="tools">
+                <h2>Choose your tools</h2>
+                <p class="lead">Everything Dynamics 365 and Power Platform is on; the Jira and Clockify
+                integrations are off until you need them. You can change this any time in Settings.</p>
+                <div class="tool">
+                    <div class="info">
+                        <div class="name">Floating launcher</div>
+                        <div class="desc">A small 🧰 tab on the right edge of supported pages that opens the command palette.</div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="launcher-toggle" aria-label="Show the floating launcher">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="tool-list"></div>
+                <div class="actions">
+                    <span></span>
+                    <button class="primary" data-action="next">Next</button>
+                </div>
+            </div>
+
+            <!-- 2. Environments -->
+            <div class="step" data-step="environments" hidden>
+                <h2>Your environments</h2>
+                <p class="lead">Label your environments DEV, TEST or PROD once: the label shows as a badge on every
+                page of that environment, and the deploy, clone and flow tools offer them as targets.
+                The toolbox opens the Power Apps maker portal in a background tab to read the list of
+                environments you can access, then closes it again.</p>
+                <div class="find">
+                    <button class="primary" id="find-environments">Find my environments</button>
+                    <span id="env-status" class="status" role="status"></span>
+                </div>
+                <div id="env-list"></div>
+                <div class="actions">
+                    <button data-action="back">Back</button>
+                    <span>
+                        <button data-action="skip">Skip</button>
+                        <button class="primary" data-action="next" id="env-next" hidden>Next</button>
+                    </span>
+                </div>
+            </div>
+
+            <!-- 3. Clockify -->
+            <div class="step" data-step="clockify" hidden>
+                <h2>Clockify</h2>
+                <p class="lead">Entered once, used by both the Jira Clockify Timer and Clockify Sync.
+                The key is stored only in this browser and sent only to api.clockify.me.</p>
+                <label class="field-label" for="clockify-key">Clockify API key</label>
+                <div class="row">
+                    <input id="clockify-key" type="password" autocomplete="off" placeholder="Clockify → Profile settings → API → Generate">
+                    <button id="clockify-connect">Connect</button>
+                </div>
+                <div id="clockify-status" class="status" role="status"></div>
+                <label class="field-label" for="clockify-workspace">Workspace</label>
+                <select id="clockify-workspace" disabled>
+                    <option value="">Connect to choose a workspace</option>
+                </select>
+                <div id="rounding" hidden>
+                    <label class="field-label" for="rounding-block">Duration rounding</label>
+                    <select id="rounding-block"></select>
+                    <div id="rounding-up-row">
+                        <label class="field-label" for="rounding-up">Round up once a block has run for (minutes)</label>
+                        <input id="rounding-up" type="number" min="1">
+                    </div>
+                    <div id="rounding-example" class="note"></div>
+                </div>
+                <div class="actions">
+                    <button data-action="back">Back</button>
+                    <span>
+                        <button data-action="skip">Skip</button>
+                        <button class="primary" data-action="next">Next</button>
+                    </span>
+                </div>
+            </div>
+
+            <!-- 4. Done -->
+            <div class="step" data-step="done" hidden>
+                <h2>You're all set 🎉</h2>
+                <ol class="steps">
+                    <li><strong>Pin the extension</strong> — click the puzzle-piece icon in the toolbar and pin <em>Power Platform Toolbox</em>.</li>
+                    <li><strong>Open a supported page</strong> — a Dynamics 365 app, <code>make.powerapps.com</code>, <code>make.powerautomate.com</code>, or Jira.</li>
+                    <li><strong>Click the toolbox icon</strong> to see every command available on that page, or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> for the command palette.</li>
+                </ol>
+                <p>Already have Dynamics or Power Platform tabs open? Reload them to start the toolbox there.
+                Everything you chose here can be changed later in <button id="open-options" class="link-btn">Settings</button>,
+                where you can also run this setup again.</p>
+                <div class="actions">
+                    <button data-action="back">Back</button>
+                    <span></span>
+                </div>
+            </div>
+        </section>
 
         <section class="privacy-card">
             <h2>🔒 Your data stays yours</h2>
@@ -23,21 +120,6 @@
                 <li><strong>Network requests you can predict.</strong> The only requests made are the ones tools need for their job: your own Dynamics&nbsp;365 / Power Platform environments, Jira, and — only if you configure a Clockify API key — the Clockify API. Requests to anything else are blocked by design.</li>
                 <li><strong>Open source.</strong> Every line is auditable on <a href="https://github.com/AhashSritharan/power-platform-toolbox" target="_blank" rel="noopener">GitHub</a>.</li>
             </ul>
-        </section>
-
-        <section>
-            <h2>🚀 Getting started</h2>
-            <ol class="steps">
-                <li><strong>Pin the extension</strong> — click the puzzle-piece icon in the toolbar and pin <em>Power Platform Toolbox</em>.</li>
-                <li><strong>Open a supported page</strong> — a Dynamics 365 app, <code>make.powerapps.com</code>, <code>make.powerautomate.com</code>, or Jira.</li>
-                <li><strong>Click the toolbox icon</strong> to see every tool command available on that page, or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> for the command palette.</li>
-            </ol>
-            <p>Don't need everything? <button id="open-options" class="link-btn">Turn individual tools on or off in Settings</button>.</p>
-        </section>
-
-        <section>
-            <h2>🧰 What's inside</h2>
-            <div id="tool-cards"></div>
         </section>
 
         <footer>

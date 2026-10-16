@@ -40,7 +40,7 @@ when publishing. One-time $5 registration fee applies to new developer accounts.
 > • Jira Clockify Timer (off by default) — start/stop a Clockify timer from any Jira issue, and, when the issue is not already there, offer to move it to a status of your choice and assign it to you
 > • Clockify → Dynamics 365 Sync (off by default) — import time entries into Dynamics 365
 >
-> Every tool is individually toggleable, and every command is reachable from the toolbar popup or the command palette (Alt+Shift+P). The two Clockify/Jira integrations ship switched off — turn them on in the options page if you use those services.
+> Every tool is individually toggleable, and every command is reachable from the toolbar popup or the command palette (Alt+Shift+P). A short setup after installing lets you pick your tools, label all the environments you can access as DEV/TEST/PROD in one go, and enter your Clockify settings once for both Clockify tools. The two Clockify/Jira integrations ship switched off — turn them on in setup or the options page if you use those services.
 
 - **Privacy policy URL:** https://github.com/AhashSritharan/power-platform-toolbox/blob/main/PRIVACY.md
 - **Homepage URL:** https://github.com/AhashSritharan/power-platform-toolbox
@@ -57,7 +57,7 @@ when publishing. One-time $5 registration fee applies to new developer accounts.
 |---|---|
 | `storage` | Persists the user's own settings (enabled tools, environment labels, an optional user-provided Clockify API key) locally in the browser. Nothing is transmitted. |
 | `*.dynamics.com` | The Dynamics 365 tools run on these pages and call the environment's own Dataverse Web API using the user's existing session. |
-| `*.powerapps.com` | Tools run on the Power Apps maker portal / canvas player (environment badge, turned-off highlighting, classic relationship dialog, adding existing components to a solution). |
+| `*.powerapps.com` | Tools run on the Power Apps maker portal / canvas player (environment badge, turned-off highlighting, classic relationship dialog, adding existing components to a solution). During setup, and only when the user asks for it, the maker portal is opened in a background tab so the list of environments it loads can be labelled DEV/TEST/PROD; the tab closes again. |
 | `*.powerautomate.com` | Tools run on the Power Automate maker portal (run page actions, expression validator, environment badge). |
 | `*.atlassian.net` | The Jira Clockify Timer adds a start/stop timer button to Jira issue pages, and — only for changes the user confirms in the dialog it shows — transitions the issue to their chosen status and assigns it to them through Jira’s own REST API, using the browser session the user is already signed in with. |
 | `api.clockify.me` | Only used if the user configures their own Clockify API key, to start/stop timers and read time entries in their own workspace. |
