@@ -101,6 +101,7 @@ export default {
 
         const hostname = location.hostname.toLowerCase();
         const isDynamics = hostname.endsWith('.dynamics.com');
+        const isMakerPortal = hostname === 'make.powerapps.com' || hostname === 'make.powerautomate.com';
         let dynamicsEnvId = null;    // resolved once per Dynamics host
         let orgFriendlyName = null;
 
@@ -560,6 +561,13 @@ export default {
                         ? [ui.el('span', { className: 'env-name', textContent: env.name }),
                             ui.el('span', { className: 'env-sub', textContent: env.host ?? env.envId })]
                         : [ui.el('code', { textContent: env.envId })]),
+                    // On a maker portal, Switch moves the portal; the environment's
+                    // Dynamics app opens next to it, so the portal tab stays put.
+                    ...(isMakerPortal && env.host ? [ui.el('button', {
+                        className: 'ppt-btn', textContent: 'Open', style: 'padding:2px 10px;font-size:11px',
+                        title: `Open ${env.host} in a new tab`,
+                        onclick: () => chrome.runtime.sendMessage({ type: 'open-tab', url: `https://${env.host}/`, active: true }),
+                    })] : []),
                     env.isCurrent
                         ? ui.el('span', { textContent: 'current', style: 'color:var(--muted);font-size:11px' })
                         : ui.el('button', {

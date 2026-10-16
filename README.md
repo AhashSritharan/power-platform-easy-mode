@@ -50,7 +50,7 @@ Please open an issue if you see that happen.
 
 Every tool's commands are reachable from the toolbar popup and from the
 **command palette** — open it with `Alt+Shift+P`, or with the small 🧰 tab on
-the right edge of every supported page (drag it up or down out of the way; hover
+the right edge of every Dynamics 365 and Power Platform page (drag it up or down out of the way; hover
 it for a × to hide it, or turn it off in the options). Individual tools can be
 switched on/off in the options page.
 

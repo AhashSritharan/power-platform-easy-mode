@@ -88,6 +88,10 @@ if (location.hostname === 'make.powerapps.com' && new URLSearchParams(location.s
         .catch((e) => console.error('[Power Platform Toolbox] environment discovery failed:', e));
 }
 
+// On Jira the only tool puts its own timer button on the page, so a launcher
+// there would just be in the way; the popup and Alt+Shift+P still work.
+const NO_LAUNCHER = /\.atlassian\.net$/i;
+
 // The launcher only shows where some tool has something to offer — and there,
 // setup is one settings command away.
 loadTools().then(() => {
@@ -96,5 +100,5 @@ loadTools().then(() => {
         toolId: 'setup', title: 'Run setup', icon: '🚀', svg: 'rocket', kind: 'setting',
         run: () => chrome.runtime.sendMessage({ type: 'open-setup' }),
     });
-    showLauncher(showPalette);
+    if (!NO_LAUNCHER.test(location.hostname)) showLauncher(showPalette);
 });
