@@ -94,13 +94,16 @@ export async function paletteTitles(palette) {
     return [...cards, ...rows];
 }
 
-/** Runs a command from the palette by its exact title. */
+/** Runs a command from the palette by its exact title — a tool's card or a settings row. */
 export async function runCommand(page, title) {
     const palette = await openPalette(page);
     const cards = palette.locator('.ppt-palette-card');
     const index = await cards.evaluateAll((els, t) => els.findIndex((e) => e.title.split('\n')[0] === t), title);
-    expect(index, `palette command "${title}"`).toBeGreaterThanOrEqual(0);
-    await cards.nth(index).click();
+    const command = index >= 0
+        ? cards.nth(index)
+        : palette.locator('.ppt-palette-item').filter({ has: page.locator('.title').getByText(title, { exact: true }) });
+    await expect(command, `palette command "${title}"`).toHaveCount(1);
+    await command.click();
     await expect(palette).toBeHidden();
 }
 

@@ -1,7 +1,8 @@
 /**
  * Clockify → Dynamics 365 Sync (extension/src/tools/clockify-sync.js): how
  * Clockify time entries become CRM time entries — same description on the
- * same day merged into one, durations rounded to 15-minute blocks.
+ * same day merged into one, durations imported as they are or rounded to
+ * blocks the way the user's company books time.
  *
  * The tool writes msdyn_timeentry (Project Operations), which the developer
  * environment does not have, so this logic is pinned down here rather than in
@@ -18,7 +19,7 @@ globalThis.chrome = { runtime: { id: 'test' }, storage: { local: {}, onChanged: 
 globalThis.document = { addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] };
 globalThis.window = { addEventListener() {} };
 globalThis.location = { href: 'https://contoso.crm4.dynamics.com/main.aspx', origin: 'https://contoso.crm4.dynamics.com', search: '' };
-const { mergeTimeEntries, roundToBlocks } = await import(pathToFileURL(join(ROOT, 'extension/src/tools/clockify-sync.js')));
+const { mergeTimeEntries, roundDuration, normalizeRounding, durationLabel } = await import(pathToFileURL(join(ROOT, 'extension/src/tools/clockify-sync.js')));
 
 // Clockify's time-entry shape (description + timeInterval), trimmed.
 const entry = (description, start, minutes) => ({
@@ -40,11 +41,59 @@ test('entries with the same description on the same day become one, durations su
     assert.equal(review._count, 2);
 });
 
-test('durations round to 15-minute blocks, with up to 5 minutes rounded up', () => {
-    assert.equal(roundToBlocks(15), 15);
-    assert.equal(roundToBlocks(18), 15);
-    assert.equal(roundToBlocks(20), 30);
-    assert.equal(roundToBlocks(75), 75);
-    assert.equal(roundToBlocks(83), 90);
-    assert.equal(roundToBlocks(4), 0, 'today: under 5 minutes rounds to nothing');
+test('durations are imported unrounded by default', () => {
+    assert.equal(roundDuration(4), 4, 'short entries are kept, not rounded to nothing');
+    assert.equal(roundDuration(83), 83);
+    assert.equal(roundDuration(83, { block: 0, roundUpFrom: 1 }), 83);
+    assert.equal(roundDuration(83, { block: 7, roundUpFrom: 1 }), 83, 'a block size it does not offer does not round');
+});
+
+test('rounds up to the next block from the chosen minute, and down below it', () => {
+    const tenFromFour = (minutes) => roundDuration(minutes, { block: 10, roundUpFrom: 4 });
+    assert.equal(tenFromFour(4), 10);
+    assert.equal(tenFromFour(3), 0);
+    assert.equal(tenFromFour(13), 10);
+    assert.equal(tenFromFour(14), 20);
+    assert.equal(tenFromFour(20), 20, 'a whole block stays as it is');
+});
+
+test('rounding up from 1 minute rounds every started block up', () => {
+    const quarterFromOne = (minutes) => roundDuration(minutes, { block: 15, roundUpFrom: 1 });
+    assert.equal(quarterFromOne(1), 15);
+    assert.equal(quarterFromOne(15), 15);
+    assert.equal(quarterFromOne(16), 30);
+});
+
+test('15-minute blocks rounding up from 5 minutes', () => {
+    const quarterFromFive = (minutes) => roundDuration(minutes, { block: 15, roundUpFrom: 5 });
+    assert.equal(quarterFromFive(18), 15);
+    assert.equal(quarterFromFive(20), 30);
+    assert.equal(quarterFromFive(83), 90);
+    assert.equal(quarterFromFive(4), 0);
+});
+
+test('a saved or typed setting is brought into range', () => {
+    assert.deepEqual(normalizeRounding({ block: 10, roundUpFrom: 4 }), { block: 10, roundUpFrom: 4 });
+    assert.deepEqual(normalizeRounding({ block: '15', roundUpFrom: '5' }), { block: 15, roundUpFrom: 5 }, 'form values are strings');
+    assert.deepEqual(normalizeRounding({ block: 10, roundUpFrom: 0 }), { block: 10, roundUpFrom: 1 });
+    assert.deepEqual(normalizeRounding({ block: 10, roundUpFrom: 25 }), { block: 10, roundUpFrom: 10 }, 'at most the block: then it only rounds down');
+    assert.deepEqual(normalizeRounding({ block: 10, roundUpFrom: 'abc' }), { block: 10, roundUpFrom: 1 });
+    assert.deepEqual(normalizeRounding({ block: 7, roundUpFrom: 3 }), { block: 0, roundUpFrom: 1 }, 'unknown block size: no rounding');
+    assert.deepEqual(normalizeRounding(undefined), { block: 0, roundUpFrom: 1 });
+});
+
+test('the import list shows the duration CRM gets when rounding changes it', () => {
+    const min = (m) => m * 60000;
+    const tenFromFour = { block: 10, roundUpFrom: 4 };
+    assert.equal(durationLabel([min(63)]), '1h 3m', 'no rounding: just the tracked time');
+    assert.equal(durationLabel([min(60)], tenFromFour), '1h 0m', 'rounding that leaves it as it is');
+    assert.equal(durationLabel([min(63)], tenFromFour), '1h 3m → 1h 0m in CRM', 'rounded down shows too');
+    assert.equal(durationLabel([min(64)], tenFromFour), '1h 4m → 1h 10m in CRM');
+    assert.equal(durationLabel([min(4) + 20000], tenFromFour), '0h 4m → 0h 10m in CRM', 'seconds round to the minute first');
+});
+
+test('several entries are rounded one by one, as they are imported', () => {
+    const min = (m) => m * 60000;
+    // 2 × 14 min: 28 min tracked, but each entry imports as 20.
+    assert.equal(durationLabel([min(14), min(14)], { block: 10, roundUpFrom: 4 }), '0h 28m → 0h 40m in CRM');
 });

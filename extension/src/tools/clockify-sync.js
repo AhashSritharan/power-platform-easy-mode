@@ -2,8 +2,9 @@
 // Imports Clockify time entries into msdyn_timeentry records: picks a date
 // range (defaulting to the day after your last CRM entry), merges same-day
 // entries with the same description, maps descriptions to CRM projects/tasks
-// (remembered from previous imports, assignable for new ones), rounds to
-// 15-minute blocks, and creates-or-updates the CRM records.
+// (remembered from previous imports, assignable for new ones), optionally
+// rounds to blocks the way your company books time, and creates-or-updates
+// the CRM records.
 
 import { Dataverse } from '../core/dataverse.js';
 import { request, HttpError } from '../core/http.js';
@@ -242,10 +243,7 @@ function formatDateTime(dateTime) {
     }).format(new Date(dateTime));
 }
 
-function formatDuration(ms) {
-    const minutes = Math.round(ms / 60000);
-    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
+const formatMinutes = (minutes) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 
 // ── CRM write ─────────────────────────────────────────────────────────────
 /**
@@ -277,13 +275,51 @@ export function mergeTimeEntries(entries) {
     }));
 }
 
-/** Minutes rounded to 15-minute blocks with a 5-minute grace (20 → 30, 18 → 15). */
-export const roundToBlocks = (minutes) => Math.floor((minutes + 10) / 15) * 15;
+/** Block sizes durations can be rounded to; 0 is no rounding (the default). */
+const ROUNDING_BLOCKS = [0, 5, 10, 15, 30, 60];
+
+/**
+ * A rounding setting as saved or typed, made safe to use: a block size from
+ * ROUNDING_BLOCKS, and the minute into a block from which it rounds up
+ * (1 … block; at the block size itself it only ever rounds down).
+ */
+export function normalizeRounding(rounding) {
+    const block = Number(rounding?.block);
+    if (!ROUNDING_BLOCKS.includes(block) || block === 0) return { block: 0, roundUpFrom: 1 };
+    const from = Math.trunc(Number(rounding.roundUpFrom));
+    return { block, roundUpFrom: Number.isFinite(from) ? Math.min(Math.max(from, 1), block) : 1 };
+}
+
+/**
+ * Minutes as they are imported: the started block is rounded up once it has
+ * run for roundUpFrom minutes, and dropped below that (10-minute blocks from
+ * 4: 14 → 20, 13 → 10).
+ */
+export function roundDuration(minutes, rounding) {
+    const { block, roundUpFrom } = normalizeRounding(rounding);
+    if (!block) return minutes;
+    const started = minutes % block;
+    if (!started) return minutes;
+    return minutes - started + (started >= roundUpFrom ? block : 0);
+}
+
+/** Whole minutes an entry of `ms` is imported as. */
+const importedMinutes = (ms, rounding) => roundDuration(Math.round(ms / 60000), rounding);
+
+/**
+ * The tracked time of one or more entries (durations in ms), and what CRM
+ * gets when rounding changes it — each entry rounded on its own, as imported.
+ */
+export function durationLabel(durationsMs, rounding) {
+    const tracked = Math.round(durationsMs.reduce((sum, ms) => sum + ms, 0) / 60000);
+    const imported = durationsMs.reduce((sum, ms) => sum + importedMinutes(ms, rounding), 0);
+    return imported === tracked ? formatMinutes(tracked) : `${formatMinutes(tracked)} → ${formatMinutes(imported)} in CRM`;
+}
 
 async function createOrUpdateTimeEntry(entry, project, projectTask) {
     const start = new Date(entry.timeInterval.start);
     const end = new Date(entry.timeInterval.end);
-    const durationMinutes = roundToBlocks(Math.round((end - start) / 60000));
+    const durationMinutes = importedMinutes(end - start, config.rounding);
     const description = entry.description || 'Imported from Clockify';
     const dateValue = utcMidnight(entry.timeInterval.start);
 
@@ -332,6 +368,30 @@ function openSettings() {
     const keyInput = ui.el('input', { className: 'ppt-input', type: 'password', value: config.apiKey, placeholder: 'From Clockify → Profile → API' });
     const wsInput = ui.el('input', { className: 'ppt-input', type: 'text', value: config.workspaceId, placeholder: 'From the workspace URL' });
     const settingsInput = ui.el('input', { className: 'ppt-input', type: 'text', value: config.timeEntrySettingsId, placeholder: 'Optional msdyn_timeentrysetting GUID' });
+    const rounding = normalizeRounding(config.rounding);
+    const blockSelect = ui.el('select', { className: 'ppt-select' }, ROUNDING_BLOCKS.map((block) =>
+        ui.el('option', { value: String(block), textContent: block ? `${block}-minute blocks` : 'No rounding' })));
+    blockSelect.value = String(rounding.block);
+    const roundUpInput = ui.el('input', { className: 'ppt-input', type: 'number', min: '1', value: String(rounding.roundUpFrom) });
+    const roundUpRow = ui.el('div', {}, [
+        ui.el('label', { className: 'ppt-label', textContent: 'Round up once a block has run for (minutes)' }), roundUpInput,
+    ]);
+    const roundingExample = ui.el('div', { className: 'ppt-note' });
+    const readRounding = () => normalizeRounding({ block: blockSelect.value, roundUpFrom: roundUpInput.value });
+    const paintRounding = () => {
+        const { block, roundUpFrom } = readRounding();
+        roundUpRow.style.display = block ? '' : 'none';
+        roundUpInput.max = String(block || 1);
+        roundingExample.textContent = !block
+            ? 'Durations are imported to the minute, as tracked in Clockify.'
+            : roundUpFrom >= block
+                ? `Durations are rounded down to whole ${block}-minute blocks.`
+                : `${block + roundUpFrom} min → ${roundDuration(block + roundUpFrom, { block, roundUpFrom })} min`
+                    + (roundUpFrom > 1 ? `, ${block + roundUpFrom - 1} min → ${block} min` : '');
+    };
+    blockSelect.addEventListener('change', paintRounding);
+    roundUpInput.addEventListener('input', paintRounding);
+    paintRounding();
     ui.modal({
         title: '🕐 Clockify Sync Settings',
         render: (body) => {
@@ -340,6 +400,8 @@ function openSettings() {
                 ui.el('label', { className: 'ppt-label', textContent: 'Clockify API key' }), keyInput,
                 ui.el('label', { className: 'ppt-label', textContent: 'Clockify workspace ID' }), wsInput,
                 ui.el('label', { className: 'ppt-label', textContent: 'Time entry settings ID (optional)' }), settingsInput,
+                ui.el('label', { className: 'ppt-label', textContent: 'Duration rounding' }), blockSelect,
+                roundUpRow, roundingExample,
             );
         },
         buttons: [
@@ -363,9 +425,11 @@ function openSettings() {
                     config.apiKey = keyInput.value.trim();
                     config.workspaceId = wsInput.value.trim();
                     config.timeEntrySettingsId = settingsInput.value.trim().replace(/[{}]/g, '');
+                    config.rounding = readRounding();
                     await store.set('clockify_api_key', config.apiKey);
                     await store.set('clockify_workspace_id', config.workspaceId);
                     await store.set('clockify_timeentrysettings_id', config.timeEntrySettingsId);
+                    await store.set('clockify_rounding', config.rounding);
                     close();
                     ui.toast('✅ Settings saved');
                 },
@@ -601,7 +665,7 @@ function showImportDialog(mergedEntries, mappings, unknownDescriptions) {
                         ]),
                         ui.el('div', { className: 'meta' }, [
                             `${formatDateTime(entry.timeInterval.start)} – ${formatDateTime(entry.timeInterval.end)} `,
-                            ui.el('span', { style: 'color:var(--accent);font-weight:500', textContent: `(${formatDuration(entry._totalMs)})` }),
+                            ui.el('span', { style: 'color:var(--accent);font-weight:500', textContent: `(${durationLabel([entry._totalMs], config.rounding)})` }),
                             ...(entry.project?.name ? [ui.el('div', { textContent: `📁 ${entry.project.name}` })] : []),
                             ...(entry._count > 1 ? [ui.el('div', { style: 'color:var(--accent)', textContent: `Merged ${entry._count} entries` })] : []),
                             target,
@@ -632,7 +696,6 @@ function openAssignModal(desc, mergedEntries, mappings, onDone) {
     const local = { project: current.project ?? null, projectTask: current.projectTask ?? null };
 
     const matching = mergedEntries.filter((e) => (e.description || '').trim() === desc);
-    const totalMs = matching.reduce((sum, e) => sum + (e._totalMs ?? 0), 0);
     const dates = [...new Set(matching.map((e) => e.timeInterval.start.split('T')[0]))].sort()
         .map((d) => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })).join(', ');
     // Entries are grouped by description, so one group can span several Clockify projects.
@@ -669,7 +732,7 @@ function openAssignModal(desc, mergedEntries, mappings, onDone) {
             body.append(
                 ui.el('div', { className: 'ppt-note' }, [
                     ui.el('div', { style: 'font-weight:600;margin-bottom:4px;color:var(--text)', textContent: desc || '(No description)' }),
-                    ui.el('div', { textContent: `⏱️ ${formatDuration(totalMs)} · 📅 ${dates}${matching.length > 1 ? ` · ${matching.length} entries` : ''}` }),
+                    ui.el('div', { textContent: `⏱️ ${durationLabel(matching.map((e) => e._totalMs ?? 0), config.rounding)} · 📅 ${dates}${matching.length > 1 ? ` · ${matching.length} entries` : ''}` }),
                     ...(clockifyProjects ? [ui.el('div', { textContent: `📁 ${clockifyProjects}` })] : []),
                 ]),
                 ui.el('label', { className: 'ppt-label', textContent: 'CRM Project' }),
@@ -740,6 +803,7 @@ export default {
             workspaceId: await store.get('clockify_workspace_id', ''),
             userId: await store.get('clockify_user_id', ''),
             timeEntrySettingsId: await store.get('clockify_timeentrysettings_id', ''),
+            rounding: normalizeRounding(await store.get('clockify_rounding', null)),
         };
         commands.register({ toolId: 'clockify-sync', title: 'Import from Clockify', icon: '📊', svg: 'clockArrowDownload', run: startImport });
         commands.register({ toolId: 'clockify-sync', title: 'Clockify Sync settings', icon: '🕐', svg: 'settings', kind: 'setting', run: openSettings });
