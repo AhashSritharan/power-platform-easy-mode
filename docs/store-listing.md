@@ -13,74 +13,116 @@ when publishing. One-time $5 registration fee applies to new developer accounts.
 
 > Developer tools for Dynamics 365, Power Platform, Jira & Clockify. Runs 100% locally — collects no data whatsoever.
 
-**Detailed description:**
+**Detailed description** — plain text, paste as is (the stores show line breaks
+but no formatting; the same text works for Edge Add-ons):
 
-> A toolbox of developer utilities that live right inside the pages you already work in — Dynamics 365 model-driven apps, the Power Apps and Power Automate maker portals, and Jira.
->
-> 🔒 PRIVACY FIRST
-> No analytics, no telemetry, no accounts, no remote code. Everything runs locally in your browser; settings are stored only in local extension storage. The only network requests are the ones tools make on your behalf to the services you already use. Fully open source.
->
-> 🧰 THE TOOLS
-> • Environment Indicator — colored DEV/TEST/PROD badge with one-click environment switching
-> • Solution Deployer — deploy solutions between environments, check dependencies, clean up deployed solutions
-> • Solution History — imports and exports in one panel: live progress of running solution imports and upgrades with a drill-down log viewer, and every export the environment still holds, re-downloadable
-> • Add Existing Components — the maker portal's "Add existing" with a real grid: sort on any column (several at once), filter any column with the usual operators (contains, begins with, on or after, has data…), choose the columns, multi-select and add in one go. Already open the portal's own panel? One click on "Filter & sort in Toolbox" reopens the same list — same solution, same component type, same search — in the filterable grid
-> • Cloud Flow Manager — enable/disable the cloud flows in a solution, individually or in bulk
-> • Flow Run Monitor — flow run filtering, statistics and visualization, plus an issue list that understands child flows: a flow1→flow2→flow3 cascade counts as one incident filed under flow3 where the error really happened, the chain is traced up even through parents that caught the error and reported success, and everything pivots by flow, error, flow × error or caller ("which callers trigger this failure, and how often")
-> • Expression Validator — find flow expressions referencing missing actions or variables
-> • Find All References — the thing your IDE does, for flows: pick a step, trigger or variable and see every expression, runAfter and variable write that references it, and everything it references back
-> • Parse JSON Schema Builder — a field picker and Parse JSON schema for a Dataverse List rows query, so records expanded with their 1:N children get dynamic content back; picked fields drop straight in at your cursor
-> • Run Page Actions — "Run tree", "Open run", "Re-run" and "Download" buttons on Power Automate run pages
-> • Audit History — who changed what and when, with old and new values
-> • Record Editor — view every value on a record and change any of them in place, bypassing the form (including lookups)
-> • Record Browser — every record of a table with every column on offer, sortable and filterable, without editing a view first
-> • Deep Clone — clone records with related child records, or copy them to another environment with the same GUID
-> • Classic Relationship Dialog — open the classic "Manage Relationship" dialog from the maker portal
-> • Turned-Off Highlighter — spot turned-off flows and components in solution views at a glance
-> • Jira Clockify Timer (off by default) — start/stop a Clockify timer from any Jira issue, and, when the issue is not already there, offer to move it to a status of your choice and assign it to you
-> • Clockify → Dynamics 365 Sync (off by default) — import time entries into Dynamics 365
->
-> Every tool is individually toggleable, and every command is reachable from the toolbar popup or the command palette (Alt+Shift+P). A short setup after installing lets you pick your tools, label all the environments you can access as DEV/TEST/PROD in one go, and enter your Clockify settings once for both Clockify tools. The two Clockify/Jira integrations ship switched off — turn them on in setup or the options page if you use those services.
+```text
+Deploy solutions, browse and edit records, debug flows and see which environment you are in — right inside Dynamics 365 and the Power Platform maker portals.
+
+✔ 18 tools, one palette (Alt+Shift+P)
+✔ Labels all your environments DEV / TEST / PROD in one click
+✔ No data collected, nothing leaves your browser, open source
+
+SOLUTIONS
+• Solution Deployer — deploy between environments, check dependencies
+• Solution History — live import progress, failure logs, past exports
+• Add Existing Components — sortable, filterable "Add existing"
+• Turned-Off Highlighter — spot turned-off flows and components
+• Classic Relationship Dialog — back in the maker portal
+
+DATA
+• Record Browser — every record, every column, no view needed
+• Record Editor — edit any value in place, bypassing the form
+• Deep Clone — copy a record with its children, even across environments
+• Audit History — who changed what, and when
+
+FLOWS
+• Flow Run Monitor — trace failures to the child flow that broke
+• Cloud Flow Manager — turn flows on or off in bulk
+• Find All References — what uses this step or variable
+• Expression Validator — catch references to missing actions
+• Parse JSON Schema Builder — schema for List rows with children
+• Run Page Actions — re-run and download from the run page
+
+ENVIRONMENTS
+• Environment Indicator — DEV / TEST / PROD badge, one-click switching
+
+OPTIONAL
+• Jira Clockify Timer — start Clockify timers from Jira issues
+• Clockify → Dynamics 365 Sync — import time entries
+```
 
 - **Privacy policy URL:** https://github.com/AhashSritharan/power-platform-toolbox/blob/main/PRIVACY.md
 - **Homepage URL:** https://github.com/AhashSritharan/power-platform-toolbox
 
 ## Privacy tab answers
 
-- **Single purpose:** Adds developer/administrator productivity tools to Microsoft Power Platform, Dynamics 365 and Jira pages.
-- **Data usage:** check **none** of the data-type boxes. The extension does not collect or transmit any user data.
-- **Remote code:** No. All code is packaged; nothing is loaded or evaluated from the network.
+As submitted for 2.0.0 (Chrome Web Store, October 2026).
 
-**Permission justifications:**
+**Single purpose:**
 
-| Permission | Justification |
-|---|---|
-| `storage` | Persists the user's own settings (enabled tools, environment labels, an optional user-provided Clockify API key) locally in the browser. Nothing is transmitted. |
-| `*.dynamics.com` | The Dynamics 365 tools run on these pages and call the environment's own Dataverse Web API using the user's existing session. |
-| `*.powerapps.com` | Tools run on the Power Apps maker portal / canvas player (environment badge, turned-off highlighting, classic relationship dialog, adding existing components to a solution). During setup, and only when the user asks for it, the maker portal is opened in a background tab so the list of environments it loads can be labelled DEV/TEST/PROD; the tab closes again. |
-| `*.powerautomate.com` | Tools run on the Power Automate maker portal (run page actions, expression validator, environment badge). |
-| `*.atlassian.net` | The Jira Clockify Timer adds a start/stop timer button to Jira issue pages, and — only for changes the user confirms in the dialog it shows — transitions the issue to their chosen status and assigns it to them through Jira’s own REST API, using the browser session the user is already signed in with. |
-| `api.clockify.me` | Only used if the user configures their own Clockify API key, to start/stop timers and read time entries in their own workspace. |
+```text
+Helps developers and administrators build and manage Microsoft Dynamics 365 and Power Platform solutions, by adding tools to the pages they already work in: the Dynamics 365 apps and the Power Apps and Power Automate maker portals. The tools inspect and edit Dataverse records, deploy and track solutions, debug Power Automate flows and show which environment the user is in. Two optional, off-by-default tools record the time spent on this work: a Clockify timer on Jira issues, and an import of Clockify time entries into Dynamics 365.
+```
 
-## Assets checklist
+**Justification for `storage`:**
 
-- [ ] Icon 128×128 — already in the package (`extension/icons/icon128.png`)
-- [ ] 1–5 screenshots, 1280×800 (or 640×400). Suggested shots:
-  - [ ] Command palette open on a Dynamics 365 page
-  - [ ] Solution History side panel with a running import
-  - [ ] Add Existing Components: the "Filter & sort in Toolbox" button in the portal's
-        "Add existing web resources" panel, and the grid it opens with a column filter menu
-        and a couple of filter chips applied
-  - [ ] Environment Indicator badge + config dialog on the maker portal
-  - [ ] Options page showing the per-tool toggles
-  - [ ] Popup on a supported page
-- [ ] (Optional) small promo tile 440×280
+```text
+Persists the user's own settings (enabled tools, environment labels, an optional user-provided Clockify API key) locally in the browser. Nothing is transmitted.
+```
+
+**Justification for host permissions** (one field for all hosts):
+
+```text
+The extension's tools run inside these sites and act only on the user's own data, using the session the user is already signed in with.
+• *.dynamics.com: the Dynamics 365 tools run in model-driven apps and call that environment's own Dataverse Web API (records, solutions, flows, audit history).
+• *.powerapps.com and *.powerautomate.com: tools run in the Power Apps and Power Automate maker portals (environment badge, solution and flow tools). During setup, only when the user clicks "Find my environments", the maker portal opens in a background tab so the list of environments it loads can be labelled; the tab then closes.
+• *.atlassian.net: optional, off by default. Adds a Clockify timer button to Jira issues.
+• api.clockify.me: optional, off by default. Used only with the user's own Clockify API key, to start and stop timers and read their time entries.
+No data is collected or sent to the developer.
+```
+
+**Remote code:** No. All code is packaged; there is no `eval`, `new Function` or
+script loaded from the network.
+
+**Data usage:** no data-type box ticked. Pages and records are read only inside
+the browser, requests go only to the user's own services, and nothing reaches
+the developer. The one judgment call is the optional Clockify API key: it is
+stored locally and sent only to Clockify, for the user's own account, so it was
+not declared as "authentication information". All three confirmations at the
+bottom are ticked.
+
+## Test instructions
+
+Submitted without a test account; if the review is rejected because it could
+not be tested, create a dedicated reviewer user in the test tenant (maker
+role, no MFA, removed after approval) and add its sign-in here.
+
+**Additional instructions:**
+
+```text
+Requires a Microsoft Dynamics 365 / Power Platform account. A free one: https://aka.ms/PowerAppsDevPlan (Power Apps Developer Plan, includes an environment). Open the environment's Dynamics 365 app or https://make.powerapps.com, then press Alt+Shift+P (or click the 🧰 tab on the right edge) to open the toolbox, e.g. "Browse Records". Setup opens after install. Jira and Clockify tools are optional, off by default, and not needed for review.
+```
+
+## Images
+
+All JPEG (the store rejects PNGs with an alpha channel). They were made from
+captures of the test environment with identifying details replaced by
+placeholders, and are not kept in this repository.
+
+- Screenshots, 1280×800, in this order: command palette, Record Browser,
+  Environment Indicator on the maker portal, Find All References in the flow
+  designer, setup's environments step. (Chrome takes 5; a sixth, Solution
+  History, is spare for Edge, which takes up to 10.)
+- Small promo tile 440×280 and large promo tile 1400×560.
+- Publisher icon 128×128: `extension/icons/icon128.png` on white.
 
 ## Publishing steps
 
-1. `cd extension && zip -r ../power-platform-toolbox-extension.zip .` (or take the
-   zip from the GitHub release workflow).
-2. Developer dashboard → **New item** → upload the zip.
-3. Fill in the listing/privacy tabs from this document, upload screenshots.
-4. Submit for review. First review typically takes a few days; "no data
-   collected" + narrow host permissions keeps it uncomplicated.
+1. Raise `version` in `extension/manifest.json` — the store rejects a version
+   it has already seen (2.0.0 is taken).
+2. Publish a GitHub release; the release workflow reruns the end-to-end tests
+   and attaches `power-platform-toolbox-extension.zip`.
+3. Developer dashboard → the item → **Package** → upload that zip.
+4. Update the listing and privacy tabs from this document if anything changed,
+   and submit for review.
