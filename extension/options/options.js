@@ -1,8 +1,17 @@
 // Options page: enable/disable individual tools. The service worker watches
 // the enabledTools key and re-registers content scripts accordingly.
 import { TOOLS, CATEGORY_ORDER, isToolEnabled } from '../src/registry.js';
+import { loadClockifySettings } from '../src/tools/shared/clockify-settings.js';
 
 const ENABLED_KEY = 'enabledTools';
+// A Clockify tool switched on without an API key cannot do anything yet:
+// its row links to the Clockify step of setup.
+const CLOCKIFY_TOOLS = new Set(['jira-clockify-timer', 'clockify-sync']);
+let clockifyConfigured = false;
+const clockifyLinks = []; // [{ link, checkbox }]
+const paintClockifyLinks = () => {
+    for (const { link, checkbox } of clockifyLinks) link.hidden = !checkbox.checked || clockifyConfigured;
+};
 const list = document.getElementById('tool-list');
 const hint = document.getElementById('reload-hint');
 
@@ -39,6 +48,7 @@ async function setAll(isEnabled) {
     for (const checkbox of list.querySelectorAll('input[type=checkbox]')) {
         checkbox.checked = isEnabled;
     }
+    paintClockifyLinks();
 }
 
 // ── Floating launcher (core/launcher.js) ──────────────────────────────────
@@ -65,6 +75,8 @@ document.getElementById('disable-all').addEventListener('click', () => setAll(fa
 
 async function render() {
     const enabled = await getEnabledMap();
+    clockifyConfigured = !!(await loadClockifySettings()).apiKey;
+    clockifyLinks.length = 0;
     list.innerHTML = '';
 
     for (const category of CATEGORY_ORDER) {
@@ -98,7 +110,15 @@ async function render() {
             checkbox.type = 'checkbox';
             checkbox.checked = isToolEnabled(tool.id, enabled);
             checkbox.setAttribute('aria-label', `Enable ${tool.name}`);
-            checkbox.addEventListener('change', () => setEnabled(tool.id, checkbox.checked));
+            checkbox.addEventListener('change', () => { setEnabled(tool.id, checkbox.checked); paintClockifyLinks(); });
+            if (CLOCKIFY_TOOLS.has(tool.id)) {
+                const link = Object.assign(document.createElement('a'), {
+                    className: 'setup-link', href: '../welcome/welcome.html#clockify', target: '_blank',
+                    textContent: 'Set up Clockify',
+                });
+                info.appendChild(link);
+                clockifyLinks.push({ link, checkbox });
+            }
             const slider = document.createElement('span');
             slider.className = 'slider';
             label.append(checkbox, slider);
@@ -108,6 +128,7 @@ async function render() {
         }
         list.appendChild(section);
     }
+    paintClockifyLinks();
 }
 
 render();

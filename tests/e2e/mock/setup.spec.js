@@ -7,8 +7,9 @@
 // the response is that request's shape with placeholder values. Clockify's
 // /user and /workspaces answers follow Clockify's API reference — there is no
 // Clockify account to copy them from.
-import { test, expect } from './fixtures.js';
+import { test, expect, gotoOrg } from './fixtures.js';
 import { guid } from './fake-dataverse.js';
+import { runCommand } from '../support/helpers.js';
 
 const ENV_API = 'https://contoso.tenant.api.powerplatform.com/powerapps/environments';
 const DEFAULT_ENV = `Default-${guid(1801)}`;
@@ -145,5 +146,96 @@ test.describe('Setup', () => {
         await expect(page).toHaveURL(/welcome\/welcome\.html/);
         const recordBrowser = page.locator('.tool').filter({ has: page.locator('.name', { hasText: 'Record Browser' }) });
         await expect(recordBrowser.locator('input[type=checkbox]')).not.toBeChecked();
+    });
+
+    test('a link straight to the environments step lists the saved ones, then saves and closes', async ({ page, extensionId, serviceWorker }) => {
+        await serviceWorker.evaluate(({ id }) => chrome.storage.local.set({
+            'vals/environment-indicator/envIndicator_mappings': { [id]: { type: 'TEST', name: 'Contoso Sales', nameSource: 'org' } },
+            'vals/environment-indicator/envIndicator_hostCache': { 'contoso-sales.crm4.dynamics.com': id },
+        }), { id: PROD_ENV });
+        await page.goto(`chrome-extension://${extensionId}/welcome/welcome.html#environments`);
+        await expect(page.getByRole('heading', { name: 'Your environments' })).toBeVisible();
+        await expect(page.locator('#stepper')).toBeHidden();
+        await expect(page.getByRole('button', { name: 'Next' })).toBeHidden();
+        const row = page.locator('.env-row');
+        await expect(row).toHaveCount(1);
+        await expect(row).toContainText('contoso-sales.crm4.dynamics.com');
+        await expect(row.locator('select')).toHaveValue('TEST');
+        await expect(page.getByRole('button', { name: 'Find again' })).toBeVisible();
+
+        await row.locator('select').selectOption('PROD');
+        const closed = page.waitForEvent('close');
+        await page.getByRole('button', { name: 'Save' }).click();
+        await closed;
+        expect((await stored(serviceWorker, 'vals/environment-indicator/envIndicator_mappings'))[PROD_ENV].type).toBe('PROD');
+    });
+
+    test('finding again adds new environments and keeps the labels picked on screen', async ({ page, extensionId, extensionContext, serviceWorker, portal }) => {
+        await serviceWorker.evaluate(({ id }) => chrome.storage.local.set({
+            'vals/environment-indicator/envIndicator_mappings': { [id]: { type: 'TEST', name: 'Contoso Sales', nameSource: 'org' } },
+            'vals/environment-indicator/envIndicator_hostCache': { 'contoso-sales.crm4.dynamics.com': id },
+        }), { id: PROD_ENV });
+        portal.page(portalHome);
+        await extensionContext.route((url) => url.href.startsWith(`${ENV_API}?`), (route) => route.fulfill({
+            json: ENVIRONMENTS,
+            headers: { 'Access-Control-Allow-Origin': 'https://make.powerapps.com' },
+        }));
+        await page.goto(`chrome-extension://${extensionId}/welcome/welcome.html#environments`);
+        const rows = page.locator('.env-row');
+        await expect(rows).toHaveCount(1);
+        await rows.locator('select').selectOption('UAT');
+
+        const portalTab = extensionContext.waitForEvent('page');
+        await page.getByRole('button', { name: 'Find again' }).click();
+        await (await portalTab).goto('https://make.powerapps.com/?ppt-discover=1'); // see the first test
+        await expect(rows).toHaveCount(3);
+        const row = (host) => rows.filter({ has: page.locator('.env-host', { hasText: host }) });
+        await expect(row('contoso-sales.crm4.dynamics.com').locator('select')).toHaveValue('UAT');
+        await expect(row('contoso-sales-dev.crm4.dynamics.com').locator('select')).toHaveValue('DEV');
+    });
+
+    test('a link straight to the Clockify step shows only that step, and Cancel saves nothing', async ({ page, extensionId, serviceWorker }) => {
+        await page.goto(`chrome-extension://${extensionId}/welcome/welcome.html#clockify`);
+        await expect(page.getByRole('heading', { name: 'Clockify' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Choose your tools' })).toBeHidden();
+        await page.getByLabel('Clockify API key').fill('key-1');
+        const closed = page.waitForEvent('close');
+        await page.getByRole('button', { name: 'Cancel' }).click();
+        await closed;
+        expect(await stored(serviceWorker, 'vals/clockify/api_key')).toBeUndefined();
+    });
+
+    test('"Run setup" in the palette opens setup', async ({ page, org, extensionId, extensionContext }) => {
+        await gotoOrg(page, org);
+        const opened = extensionContext.waitForEvent('page');
+        await runCommand(page, 'Run setup');
+        await expect(await opened).toHaveURL(`chrome-extension://${extensionId}/welcome/welcome.html`);
+    });
+
+    test('the Environment Indicator dialog opens setup on the environments step', async ({ page, org, extensionId, extensionContext }) => {
+        await gotoOrg(page, org);
+        await runCommand(page, 'Configure Environment Indicator');
+        const opened = extensionContext.waitForEvent('page');
+        await page.locator('.ppt-dialog').getByRole('button', { name: /Find all my environments/ }).click();
+        await expect(await opened).toHaveURL(`chrome-extension://${extensionId}/welcome/welcome.html#environments`);
+    });
+
+    test('Settings points to Clockify setup when a Clockify tool is on without a key', async ({ page, extensionId, serviceWorker }) => {
+        await page.goto(`chrome-extension://${extensionId}/options/options.html`);
+        const sync = page.locator('.tool').filter({ has: page.locator('.name', { hasText: 'Clockify → Dynamics 365 Sync' }) });
+        await expect(sync.getByRole('link', { name: 'Set up Clockify' })).toBeHidden();
+        await sync.locator('.switch').click();
+        await expect(sync.getByRole('link', { name: 'Set up Clockify' })).toHaveAttribute('href', '../welcome/welcome.html#clockify');
+
+        await serviceWorker.evaluate(() => chrome.storage.local.set({ 'vals/clockify/api_key': 'key-1' }));
+        await page.reload();
+        await expect(sync.getByRole('link', { name: 'Set up Clockify' })).toBeHidden();
+    });
+
+    test('the popup offers setup on pages where no tool runs', async ({ page, extensionId, extensionContext }) => {
+        await page.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+        const opened = extensionContext.waitForEvent('page');
+        await page.getByRole('button', { name: 'Run setup' }).click();
+        await expect(await opened).toHaveURL(`chrome-extension://${extensionId}/welcome/welcome.html`);
     });
 });

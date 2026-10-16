@@ -32,7 +32,12 @@ function renderUnsupported() {
                 • Power Automate (<code>make.powerautomate.com</code>)<br>
                 • Jira Cloud (<code>*.atlassian.net</code>)
             </div>
+            <button id="run-setup" class="link-btn">🚀 Run setup</button>
         </div>`;
+    document.getElementById('run-setup').addEventListener('click', async () => {
+        await chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
+        window.close();
+    });
 }
 
 function renderCommands(tabId, commands) {

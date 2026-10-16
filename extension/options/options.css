@@ -141,3 +141,6 @@ footer {
 
 footer a { color: var(--accent); }
 code { font-size: 12px; }
+
+.tool .setup-link { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--accent); }
+[hidden] { display: none !important; }

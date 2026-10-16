@@ -88,7 +88,13 @@ if (location.hostname === 'make.powerapps.com' && new URLSearchParams(location.s
         .catch((e) => console.error('[Power Platform Toolbox] environment discovery failed:', e));
 }
 
-// The launcher only shows where some tool has something to offer.
+// The launcher only shows where some tool has something to offer — and there,
+// setup is one settings command away.
 loadTools().then(() => {
-    if (commands.all().length) showLauncher(showPalette);
+    if (!commands.all().length) return;
+    commands.register({
+        toolId: 'setup', title: 'Run setup', icon: '🚀', svg: 'rocket', kind: 'setting',
+        run: () => chrome.runtime.sendMessage({ type: 'open-setup' }),
+    });
+    showLauncher(showPalette);
 });

@@ -190,3 +190,4 @@ footer {
 @media (prefers-color-scheme: dark) {
     .tile .tile-icon { color: color-mix(in srgb, var(--tile, var(--text)) 60%, white); }
 }
+.empty #run-setup { display: block; margin: 12px auto 0; }

@@ -13,6 +13,16 @@
 // There is deliberately NO analytics, telemetry, or remote code here. The only
 // network requests are the ones tools make to the sites they integrate with.
 
+// Setup can be opened whole or on one of its steps (welcome.js reads the hash).
+const SETUP_STEPS = ['environments', 'clockify'];
+function openSetup(step, openerTab) {
+    const hash = SETUP_STEPS.includes(step) ? `#${step}` : '';
+    return chrome.tabs.create({
+        url: chrome.runtime.getURL(`welcome/welcome.html${hash}`),
+        index: openerTab ? openerTab.index + 1 : undefined,
+    });
+}
+
 chrome.runtime.onInstalled.addListener((details) => {
     if (details.reason === 'install') {
         chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
@@ -202,6 +212,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         case 'warm-session':
             warmSession(msg.origin).then(sendResponse);
+            return true;
+
+        case 'open-setup':
+            openSetup(msg.step, sender.tab).then(() => sendResponse({ ok: true }));
             return true;
 
         case 'discover-environments':

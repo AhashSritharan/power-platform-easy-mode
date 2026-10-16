@@ -2,6 +2,10 @@
 // run, the labels of the environments the user can access, and the Clockify
 // settings both Clockify tools share. It writes the same storage the tools and
 // the options page read, so running it again shows what was chosen before.
+//
+// welcome.html#environments and #clockify open one step on its own, with Save
+// and Cancel, for doing that part later — from the Environment Indicator, the
+// options page, or the background script's `open-setup` message.
 import { TOOLS, CATEGORY_ORDER, isToolEnabled } from '../src/registry.js';
 import { createStore } from '../src/core/storage.js';
 import { ENV_TYPES, loadEnvironments } from '../src/tools/shared/environments.js';
@@ -27,13 +31,15 @@ const choices = {};
 
 const STEPS = [
     { id: 'tools', label: 'Tools', leave: saveTools },
-    { id: 'environments', label: 'Environments', leave: saveEnvironments },
+    { id: 'environments', label: 'Environments', enter: enterEnvironments, leave: saveEnvironments },
     { id: 'clockify', label: 'Clockify', when: () => CLOCKIFY_TOOLS.some((id) => choices[id]), enter: enterClockify, leave: saveClockify },
     { id: 'done', label: 'Done' },
 ];
 let current = 0;
 
-const activeSteps = () => STEPS.filter((step) => !step.when || step.when());
+// One step on its own (#environments, #clockify), or the whole walk-through.
+const SINGLE = STEPS.find((step) => step.id !== 'tools' && step.id !== 'done' && `#${step.id}` === location.hash) ?? null;
+const activeSteps = () => (SINGLE ? [SINGLE] : STEPS.filter((step) => !step.when || step.when()));
 
 // The steps ahead change as tools are switched on and off (Clockify comes and goes).
 function renderStepper() {
@@ -54,8 +60,25 @@ function show(index, { scroll = true } = {}) {
     window.scrollTo({ top: $('.setup').offsetTop - 16, behavior: 'smooth' });
 }
 
+async function closeTab() {
+    const tab = await chrome.tabs.getCurrent();
+    if (tab) await chrome.tabs.remove(tab.id);
+    else window.close();
+}
+
 async function move(action) {
     const step = activeSteps()[current];
+    if (SINGLE && action === 'cancel') { await closeTab(); return; }
+    if (SINGLE && action === 'save') {
+        try {
+            await step.leave?.();
+        } catch (e) {
+            console.error('[Power Platform Toolbox] setup could not save:', e);
+            return;
+        }
+        await closeTab();
+        return;
+    }
     if (action === 'next') {
         try {
             await step.leave?.();
@@ -122,7 +145,20 @@ async function saveTools() {
 }
 
 // ── 2. Environments ───────────────────────────────────────────────────────
+// The rows on screen: saved environments at first, the portal's list once found.
 let discovered = [];
+let environmentsEntered = false;
+
+async function enterEnvironments() {
+    if (environmentsEntered) return;
+    environmentsEntered = true;
+    const saved = await loadEnvironments({ hostOnly: true });
+    if (!saved.length || discovered.length) return;
+    discovered = saved.map((env) => ({ envId: env.envId, name: env.name, host: env.host, sku: '', type: env.type ?? null }));
+    $('#env-status').textContent = `${saved.length} saved environment${saved.length === 1 ? '' : 's'}. Find again to add the ones you have not labelled yet.`;
+    $('#find-environments').textContent = 'Find again';
+    await renderEnvironments();
+}
 const SLOW_DISCOVERY_MS = 15_000;
 
 $('#find-environments').addEventListener('click', async () => {
@@ -149,7 +185,10 @@ $('#find-environments').addEventListener('click', async () => {
         button.textContent = 'Try again';
         return;
     }
+    // Labels picked on screen survive a second search.
+    const picked = new Map(discovered.map((env) => [env.envId, env.type]));
     discovered = parseDiscoveredEnvironments(result.response);
+    for (const env of discovered) if (picked.has(env.envId)) env.type = picked.get(env.envId);
     status.textContent = discovered.length
         ? `${discovered.length} environment${discovered.length === 1 ? '' : 's'} found. Check the labels, then continue.`
         : 'No environments with a Dataverse database were found for your account.';
@@ -164,7 +203,7 @@ async function renderEnvironments() {
     const typeOptions = [['', 'No label'], ...Object.keys(ENV_TYPES).map((type) => [type, `${ENV_TYPES[type].icon} ${type}`])];
     $('#env-list').replaceChildren(...discovered.map((env) => {
         const select = el('select', {}, typeOptions.map(([value, label]) => el('option', { value, textContent: label })));
-        select.value = known.get(env.envId)?.type ?? env.suggestedType ?? '';
+        select.value = (env.type !== undefined ? env.type : known.get(env.envId)?.type ?? env.suggestedType) ?? '';
         select.setAttribute('aria-label', `Label for ${env.name}`);
         select.addEventListener('change', () => { env.type = select.value || null; });
         env.type = select.value || null;
@@ -176,7 +215,8 @@ async function renderEnvironments() {
             select,
         ]);
     }));
-    $('#env-next').hidden = !discovered.length;
+    const next = $('#env-next'); // not there when the step stands alone
+    if (next) next.hidden = !discovered.length;
 }
 
 async function saveEnvironments() {
@@ -262,4 +302,18 @@ async function saveClockify() {
 // ── Start ─────────────────────────────────────────────────────────────────
 for (const heading of document.querySelectorAll('.step h2')) heading.tabIndex = -1;
 
+// A single step trades the walk-through's buttons for Cancel and Save.
+function setUpSingleStep() {
+    document.body.classList.add('single-step');
+    $('#stepper').hidden = true;
+    const actions = document.querySelector(`.step[data-step="${SINGLE.id}"] .actions`);
+    const cancel = el('button', { textContent: 'Cancel' });
+    const save = el('button', { className: 'primary', textContent: 'Save' });
+    cancel.dataset.action = 'cancel';
+    save.dataset.action = 'save';
+    actions.replaceChildren(cancel, save);
+}
+if (SINGLE) setUpSingleStep();
+// Following a link to another step from this page itself.
+window.addEventListener('hashchange', () => location.reload());
 renderTools().then(() => show(0, { scroll: false }));

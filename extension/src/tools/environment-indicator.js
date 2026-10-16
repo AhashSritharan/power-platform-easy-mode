@@ -664,6 +664,14 @@ export default {
                     }
 
                     body.append(ui.el('label', { className: 'ppt-label', textContent: 'All saved environments' }), listEl);
+                    // Labelling one environment at a time means visiting each;
+                    // setup lists every one the user can access.
+                    body.append(ui.el('button', {
+                        className: 'ppt-btn', style: 'margin-top:10px',
+                        textContent: '🔍 Find all my environments…',
+                        title: 'List every environment you can access and label them in one go',
+                        onclick: () => { close(); chrome.runtime.sendMessage({ type: 'open-setup', step: 'environments' }); },
+                    }));
                     reload();
                 },
                 buttons: envId ? [{
