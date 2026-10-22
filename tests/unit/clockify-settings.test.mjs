@@ -16,7 +16,7 @@ globalThis.document = { addEventListener() {}, querySelector: () => null };
 globalThis.window = { addEventListener() {} };
 globalThis.location = { href: 'chrome-extension://test/welcome/welcome.html', origin: 'chrome-extension://test' };
 
-const { loadClockifySettings, saveClockifySettings } =
+const { loadClockifySettings, saveClockifySettings, preferredWorkspace } =
     await import(pathToFileURL(join(ROOT, 'extension/src/tools/shared/clockify-settings.js')));
 
 /** Namespaced in-memory stores, keyed like chrome.storage: { 'ns/key': value }. */
@@ -77,4 +77,14 @@ test('changing the key forgets the user id it belonged to', async () => {
     await saveClockifySettings({ apiKey: 'key-2', userId: 'user-2' }, { storeFor });
     await saveClockifySettings({ apiKey: 'key-2' }, { storeFor });
     assert.equal((await loadClockifySettings({ storeFor })).userId, 'user-2', 'the same key keeps it');
+});
+
+test('the workspace offered first: the saved one, else the active one in Clockify, else its default, else the first', () => {
+    const workspaces = [{ id: 'ws-1' }, { id: 'ws-2' }, { id: 'ws-3' }];
+    const user = { activeWorkspace: 'ws-2', defaultWorkspace: 'ws-3' };
+    assert.equal(preferredWorkspace(workspaces, user, 'ws-3'), 'ws-3');
+    assert.equal(preferredWorkspace(workspaces, user, 'gone'), 'ws-2', 'a saved workspace no longer there is passed over');
+    assert.equal(preferredWorkspace(workspaces, { defaultWorkspace: 'ws-3' }, ''), 'ws-3');
+    assert.equal(preferredWorkspace(workspaces, {}, ''), 'ws-1');
+    assert.equal(preferredWorkspace([], user, 'ws-1'), '');
 });

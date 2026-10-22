@@ -14,6 +14,7 @@ import {
     CLOCKIFY_API, loadClockifySettings, saveClockifySettings,
     ROUNDING_BLOCKS, normalizeRounding, roundDuration, describeRounding,
 } from './shared/clockify-settings.js';
+import { clockifyConnectionFields } from './shared/clockify-connection.js';
 
 export { normalizeRounding, roundDuration };
 
@@ -341,16 +342,15 @@ async function createOrUpdateTimeEntry(entry, project, projectTask) {
 
 // ── Settings ──────────────────────────────────────────────────────────────
 function openSettings() {
-    const keyInput = ui.el('input', { className: 'ppt-input', type: 'password', value: config.apiKey, placeholder: 'From Clockify → Profile → API' });
-    const wsInput = ui.el('input', { className: 'ppt-input', type: 'text', value: config.workspaceId, placeholder: 'From the workspace URL' });
+    const connection = clockifyConnectionFields(config);
     const settingsInput = ui.el('input', { className: 'ppt-input', type: 'text', value: config.timeEntrySettingsId, placeholder: 'Optional msdyn_timeentrysetting GUID' });
     const rounding = normalizeRounding(config.rounding);
-    const blockSelect = ui.el('select', { className: 'ppt-select' }, ROUNDING_BLOCKS.map((block) =>
+    const blockSelect = ui.el('select', { id: 'cs-rounding-block', className: 'ppt-select' }, ROUNDING_BLOCKS.map((block) =>
         ui.el('option', { value: String(block), textContent: block ? `${block}-minute blocks` : 'No rounding' })));
     blockSelect.value = String(rounding.block);
-    const roundUpInput = ui.el('input', { className: 'ppt-input', type: 'number', min: '1', value: String(rounding.roundUpFrom) });
+    const roundUpInput = ui.el('input', { id: 'cs-rounding-up', className: 'ppt-input', type: 'number', min: '1', value: String(rounding.roundUpFrom) });
     const roundUpRow = ui.el('div', {}, [
-        ui.el('label', { className: 'ppt-label', textContent: 'Round up once a block has run for (minutes)' }), roundUpInput,
+        ui.el('label', { className: 'ppt-label', htmlFor: roundUpInput.id, textContent: 'Round up once a block has run for (minutes)' }), roundUpInput,
     ]);
     const roundingExample = ui.el('div', { className: 'ppt-note' });
     const readRounding = () => normalizeRounding({ block: blockSelect.value, roundUpFrom: roundUpInput.value });
@@ -368,36 +368,19 @@ function openSettings() {
         render: (body) => {
             body.append(
                 ui.el('div', { className: 'ppt-note', textContent: 'Stored only in your browser and sent only to api.clockify.me.' }),
-                ui.el('label', { className: 'ppt-label', textContent: 'Clockify API key' }), keyInput,
-                ui.el('label', { className: 'ppt-label', textContent: 'Clockify workspace ID' }), wsInput,
+                ...connection.nodes,
                 ui.el('label', { className: 'ppt-label', textContent: 'Time entry settings ID (optional)' }), settingsInput,
-                ui.el('label', { className: 'ppt-label', textContent: 'Duration rounding' }), blockSelect,
+                ui.el('label', { className: 'ppt-label', htmlFor: blockSelect.id, textContent: 'Duration rounding' }), blockSelect,
                 roundUpRow, roundingExample,
             );
         },
         buttons: [
             {
-                label: 'Test connection',
-                onClick: async () => {
-                    config.apiKey = keyInput.value.trim();
-                    try {
-                        const user = await clockify('/user');
-                        config.userId = user.id;
-                        await saveClockifySettings({ apiKey: config.apiKey, userId: user.id });
-                        ui.toast(`✅ Connected as ${user.name}`);
-                    } catch (e) {
-                        ui.toast(`❌ Connection failed: ${e.message}`, 4500);
-                    }
-                },
-            },
-            {
                 label: 'Save', primary: true,
                 onClick: async (close) => {
-                    config.apiKey = keyInput.value.trim();
-                    config.workspaceId = wsInput.value.trim();
                     config.timeEntrySettingsId = settingsInput.value.trim().replace(/[{}]/g, '');
                     config.rounding = readRounding();
-                    Object.assign(config, await saveClockifySettings({ apiKey: config.apiKey, workspaceId: config.workspaceId }));
+                    Object.assign(config, await saveClockifySettings(connection.read()));
                     await store.set('clockify_timeentrysettings_id', config.timeEntrySettingsId);
                     await store.set('clockify_rounding', config.rounding);
                     close();

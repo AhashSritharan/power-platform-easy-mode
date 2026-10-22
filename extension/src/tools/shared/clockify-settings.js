@@ -44,6 +44,15 @@ export async function saveClockifySettings(patch, { storeFor = createStore } = {
     return next;
 }
 
+/**
+ * The workspace to offer first among those the key can reach: the saved one,
+ * else the one active in Clockify, else its default, else the first.
+ */
+export function preferredWorkspace(workspaces, user, savedId) {
+    return [savedId, user?.activeWorkspace, user?.defaultWorkspace]
+        .find((id) => id && workspaces.some((ws) => ws.id === id)) ?? workspaces[0]?.id ?? '';
+}
+
 // ── Duration rounding (Clockify Sync) ─────────────────────────────────────
 // Stored by Clockify Sync as `clockify_rounding`; here so setup offers the
 // same choices and describes them the same way.

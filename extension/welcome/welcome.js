@@ -11,7 +11,7 @@ import { createStore } from '../src/core/storage.js';
 import { ENV_TYPES, loadEnvironments } from '../src/tools/shared/environments.js';
 import { parseDiscoveredEnvironments, saveDiscoveredEnvironments } from '../src/tools/shared/environment-discovery.js';
 import {
-    CLOCKIFY_API, loadClockifySettings, saveClockifySettings,
+    CLOCKIFY_API, loadClockifySettings, saveClockifySettings, preferredWorkspace,
     ROUNDING_BLOCKS, normalizeRounding, describeRounding,
 } from '../src/tools/shared/clockify-settings.js';
 
@@ -248,8 +248,7 @@ async function connectClockify() {
     try {
         const [user, workspaces] = await Promise.all([clockifyGet('/user', apiKey), clockifyGet('/workspaces', apiKey)]);
         clockify = { ...clockify, apiKey, userId: user.id };
-        const preferred = [clockify.workspaceId, user.activeWorkspace, user.defaultWorkspace]
-            .find((id) => id && workspaces.some((ws) => ws.id === id)) ?? workspaces[0]?.id ?? '';
+        const preferred = preferredWorkspace(workspaces, user, clockify.workspaceId);
         select.replaceChildren(...workspaces.map((ws) => el('option', { value: ws.id, textContent: ws.name })));
         select.disabled = !workspaces.length;
         select.value = preferred;

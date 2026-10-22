@@ -9,6 +9,7 @@ import { request, HttpError } from '../core/http.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
 import { CLOCKIFY_API as API, loadClockifySettings, saveClockifySettings } from './shared/clockify-settings.js';
+import { clockifyConnectionFields } from './shared/clockify-connection.js';
 
 // ── Status routing ──────────────────────────────────────────────────────────
 // At module scope, and free of the DOM, so tests/unit/jira-status-route.test.mjs
@@ -466,26 +467,19 @@ export default {
 
         // ── Configuration UIs ────────────────────────────────────────────
         function openSettings() {
-            const keyInput = ui.el('input', { className: 'ppt-input', type: 'password', value: config.apiKey, placeholder: 'From Clockify → Profile → API' });
-            const wsInput = ui.el('input', { className: 'ppt-input', type: 'text', value: config.workspaceId, placeholder: 'From the workspace URL' });
+            const connection = clockifyConnectionFields(config, { keyLabel: 'API key' });
             ui.modal({
                 title: '🕐 Clockify Settings',
                 render: (body) => {
                     body.append(
                         ui.el('div', { className: 'ppt-note', textContent: 'Stored only in your browser and sent only to api.clockify.me.' }),
-                        ui.el('label', { className: 'ppt-label', textContent: 'API key' }),
-                        keyInput,
-                        ui.el('label', { className: 'ppt-label', textContent: 'Workspace ID' }),
-                        wsInput,
+                        ...connection.nodes,
                     );
                 },
                 buttons: [{
                     label: 'Save', primary: true,
                     onClick: async (close) => {
-                        Object.assign(config, await saveClockifySettings({
-                            apiKey: keyInput.value.trim(),
-                            workspaceId: wsInput.value.trim(),
-                        }));
+                        Object.assign(config, await saveClockifySettings(connection.read()));
                         close();
                         ui.toast('✅ Clockify settings saved');
                         updateButtonState();
@@ -496,7 +490,7 @@ export default {
 
         function openProjectPicker() {
             if (!subdomain) { ui.toast('Could not detect the Atlassian subdomain.'); return; }
-            if (!config.apiKey || !config.workspaceId) { ui.toast('⚠️ Set your API key and workspace ID first.'); openSettings(); return; }
+            if (!config.apiKey || !config.workspaceId) { ui.toast('⚠️ Set your API key and workspace first.'); openSettings(); return; }
 
             ui.modal({
                 title: `Project for ${subdomain}`,
