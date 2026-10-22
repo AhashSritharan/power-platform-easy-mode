@@ -1,7 +1,8 @@
 # Power Platform Toolbox — working rules
 
 A Chrome/Edge MV3 extension with no build step: what is in `extension/` is
-what ships. README.md describes the tools and the architecture.
+what ships. README.md is the user guide; CONTRIBUTING.md describes the
+architecture, the tests and the README screenshots.
 
 ## Test first, every change
 
@@ -65,5 +66,6 @@ npm run test:mock        # about a minute
 npm run test:e2e         # live, needs playwright.env.json
 npm run test:deploy      # real deployment to TARGET_URL and back
 npm run test:report      # the last browser run's report
+npm run screenshots      # retake the README screenshots (fake orgs only)
 npm run check            # syntax + sensitive-data scan
 ```

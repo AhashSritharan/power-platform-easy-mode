@@ -8,10 +8,11 @@
         "test:unit": "node --test \"tests/unit/*.test.mjs\"",
         "test:mock": "playwright test --project=mock",
         "test:e2e": "playwright test --project=live",
-        "test:all": "npm run test:unit && playwright test",
+        "test:all": "npm run test:unit && playwright test --project=mock --project=live --project=deploy",
         "test:report": "playwright show-report",
         "check": "node scripts/check-syntax.mjs && node scripts/sensitive-scan.mjs",
-        "test:deploy": "playwright test --project=deploy"
+        "test:deploy": "playwright test --project=deploy",
+        "screenshots": "playwright test --project=screenshots"
     },
     "devDependencies": {
         "@playwright/test": "^1.64.1",

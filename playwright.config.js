@@ -6,7 +6,7 @@
 //           ENV_VAR_JSON (see tests/e2e/support/env.js), after `setup` signs in
 //   deploy  real deployments from it to TARGET_URL, cleaned up afterwards
 //
-// See README → "Tests".
+// See CONTRIBUTING.md → "Tests".
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
@@ -29,5 +29,7 @@ export default defineConfig({
         { name: 'live', testMatch: /live\/.*\.spec\.js/, dependencies: ['setup'] },
         // Writes to the developer environment and TARGET_URL: deploys, checks and cleans up.
         { name: 'deploy', testMatch: /deploy\/.*\.spec\.js/, dependencies: ['setup'], timeout: 10 * 60_000 },
+        // The README's screenshots, taken against the fake orgs: npm run screenshots.
+        { name: 'screenshots', testMatch: /screenshots\/.*\.shot\.js/, timeout: 60_000 },
     ],
 });

@@ -40,10 +40,12 @@ export const test = base.extend({
             // headless mode, which only Playwright's own Chromium has.
             headless: env.browser === 'chromium' && headless,
             viewport: { width: 1600, height: 1000 },
+            // The same dates, number formats and date pickers on every machine, as in CI.
+            locale: 'en-US',
             // Off by default in Playwright; Edge shows a warning bar without it.
             // CI's container runs as root, where Chromium cannot sandbox.
             chromiumSandbox: !process.env.CI,
-            args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`],
+            args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`, '--lang=en-US'],
         });
         await use(context);
         await context.close();

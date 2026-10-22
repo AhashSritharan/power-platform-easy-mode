@@ -1,186 +1,426 @@
 # Power Platform Toolbox
 
-A Chrome extension with developer tools for **Dynamics 365**, **Power Platform**,
-**Jira** and **Clockify** — running right inside the pages you already work in.
+**18 tools for Dynamics 365 and the Power Platform, right inside the pages you
+already work in.** Deploy solutions, browse and edit records, debug flows and
+always see which environment you are in, all from one command palette.
 
-> 🔒 **Privacy:** no data collection of any kind. Everything runs locally in
-> your browser. See [PRIVACY.md](PRIVACY.md).
+![The command palette open on a Dynamics 365 page, with a DEV badge in the top bar](docs/screenshots/palette.png)
 
-This project started life as a set of Tampermonkey userscripts; those are now
-fully retired — the extension in [`extension/`](extension/) is the only
-codebase, and all development happens there.
+> 🔒 **No data collected, nothing leaves your browser.** The extension has no
+> server and no analytics. It only talks to your own Dynamics 365 and Power
+> Platform environments (and to Jira and Clockify, if you switch those tools
+> on), using the sign-in you already have. See [PRIVACY.md](PRIVACY.md).
 
-## The tools
+**Who it is for:** makers, consultants, admins and developers working in
+Dynamics 365 model-driven apps, Power Apps and Power Automate. Everything it
+does, you are already allowed to do. The toolbox just makes it quicker.
 
-| Tool | Where it runs | What it does |
-|---|---|---|
-| Environment Indicator | Everywhere | Colored DEV/TEST/PROD badge, environment labeling grouped by project & one-click switching |
-| Turned-Off Highlighter | Maker portals | Highlights turned-off components (status "Off") in solution views |
-| Audit History | Dynamics 365 | Who changed what and when — audit history with old and new values, filtered by table, record, user, operation and date |
-| Deep Clone | Dynamics 365 | Clone records together with related child records — in place, or into another environment keeping the same GUID |
-| Record Editor | Dynamics 365 | View every value on a record and change any of them in place, bypassing the form — including lookups; file columns download and image columns show their thumbnail |
-| Record Browser | Dynamics 365 | Every record of a table with every column — no view to edit first. Opens on the view you are on (its columns first, its filter as a removable chip), searches all columns at once and highlights the matches, sorts on any column, filters with operators that fit each column type, hides empty columns, downloads files, shows image thumbnails, exports CSV, and opens a row in the Record Editor |
-| Solution Deployer | Dynamics 365 & maker portals | Deploy solutions between environments, check dependencies, clean up deployed solutions |
-| Solution History | Dynamics 365 & maker portals | Imports and exports in one panel: real-time progress of running solution imports and upgrades with the failure log for each, and every export the environment still holds — years of them — with one-click re-download of the original zip |
-| Add Existing Components | Dynamics 365 & Power Apps maker | The maker portal's "Add existing" with a real grid — sort on any column (several at once), filter any column with the usual operators, pick the columns, multi-select and add in one go; opens on the solution you are viewing in make.powerapps.com, and adds a "Filter & sort in Toolbox" button to the portal's own Add existing panel that reopens the same list here |
-| Cloud Flow Manager | Dynamics 365 & maker portals | Enable/disable the cloud flows in a solution, individually or in bulk |
-| Expression Validator | Power Automate | Finds flow expressions referencing missing actions/variables |
-| Find All References | Power Automate | `Shift+F12` on a step, trigger or variable — everything that references it (expressions, runAfter, variable writes) and everything it references back |
-| Parse JSON Schema Builder | Power Automate | Field picker + Parse JSON schema for a Dataverse List rows query — gets dynamic content back for records expanded with 1:N children, inserting fields at your cursor |
-| Flow Run Monitor | Dynamics 365 & maker portals | Flow run filtering, statistics and visualization, plus an issue list that collapses parent→child failure cascades into one incident filed under the flow that actually broke — tracing up through ancestors that caught the error and reported success — and pivots them by flow, error, flow × error or caller |
-| Run Page Actions | Power Automate | "Run tree", "Open run", "Re-run" and "Download" buttons on run pages |
-| Classic Relationship Dialog | Power Apps | "Manage Relationship" on the Relationships page, opening the classic relationship dialog |
-| Jira Clockify Timer | Jira Cloud | Start/stop a Clockify timer from a Jira issue, offering to move it to your working status and assign it to you when it is not already there |
-| Clockify → Dynamics 365 Sync | Dynamics 365 | Import Clockify time entries into Dynamics 365 |
-
-On the maker portals, the tools marked "maker portals" work on the environment in
-the URL: they call its Dataverse Web API through the extension's service worker,
-using your own Dynamics 365 session. The environment's Dynamics URL is read off
-the portal's own requests (or asked for once when it cannot be), and when the
-browser has no Dynamics session yet — the portals sign in with tokens, not
-cookies — one click opens the environment in a background tab so single sign-on
-can create one, then closes it again.
-
-**Add Existing Components** builds on two things Microsoft does not document:
-the `msdyn_solutioncomponentsummaries` virtual table the portal's own "Add
-existing" panels query, and the `solution-components-addexisting-subheader`
-class that identifies those panels. If either changes, the hand-off button
-stops appearing or a component type stops loading — nothing else is affected.
-Please open an issue if you see that happen.
-
-Every tool's commands are reachable from the toolbar popup and from the
-**command palette** — open it with `Alt+Shift+P`, or with the small 🧰 tab on
-the right edge of every Dynamics 365 and Power Platform page (drag it up or down out of the way; hover
-it for a × to hide it, or turn it off in the options). Individual tools can be
-switched on/off in the options page.
-
-After installing, the welcome page walks through **setup** in one go: which
-tools to run, a DEV/TEST/PROD label for every environment you can access, and —
-if a Clockify tool is on — your Clockify key, workspace and duration rounding.
-The environments come from the Power Apps maker portal's own environment list,
-read in a background tab that closes again, so there is no need to visit each
-environment first. The labels are the ones the Environment Indicator shows and
-every environment picker offers; the Clockify settings are shared by both
-Clockify tools. Setup can be run again from the options page.
-
-The two Clockify/Jira tools are **off by default** — they integrate with
-third-party services rather than the Power Platform, so switch them on in the
-options page if you use them.
+- [Install](#install)
+- [Getting started](#getting-started)
+- [The tools](#the-tools): [Environments](#environments) · [Data](#data) · [Solutions](#solutions) · [Flows](#flows) · [Time tracking](#time-tracking-optional)
+- [Settings](#settings)
+- [Questions and troubleshooting](#questions-and-troubleshooting)
 
 ## Install
 
-**From source (until the Web Store listing is live):**
+Works in **Google Chrome** and **Microsoft Edge**.
 
-1. Clone this repo.
-2. Open `chrome://extensions`, enable **Developer mode**.
-3. Click **Load unpacked** and select the `extension/` folder.
+The Chrome Web Store listing is in review. Until it is live, install it from
+the latest release. It takes about a minute:
 
-No build step — the extension loads as-is.
+1. Download **`power-platform-toolbox-extension.zip`** from the
+   [latest release](https://github.com/AhashSritharan/power-platform-toolbox/releases/latest)
+   and unzip it into a folder you will keep. The browser loads the extension
+   from that folder, so don't delete it.
+2. Open the extensions page: type `chrome://extensions` (Chrome) or
+   `edge://extensions` (Edge) in the address bar.
+3. Turn on **Developer mode** (top right in Chrome, left side in Edge).
+4. Click **Load unpacked** and pick the folder you unzipped.
+5. Pin the toolbox to the toolbar: click the puzzle-piece icon and then the pin
+   next to *Power Platform Toolbox*.
 
-## Architecture
+To update later, download the new zip, replace the folder's contents and click
+the reload icon on the extension's card.
 
-```
-extension/
-  manifest.json           MV3; storage + first-party hosts only
-  bootstrap.js            classic content script → dynamic-imports src/main.js
-  src/
-    main.js               loads enabled tools, serves popup/palette
-    registry.js           single source of truth for all tool metadata
-    background.js         service worker: allowlisted fetch proxy, helper tabs
-    core/                 shared libraries every tool builds on
-      storage.js            namespaced chrome.storage.local stores
-      http.js               fetch + cross-origin proxy (host-allowlisted)
-      dataverse.js          Dataverse Web API client (same-org & cross-env)
-      context.js            site detection, URL parsing, match patterns
-      ui.js                 shadow-DOM UI kit: modal, toast, palette, inputs
-      caret.js              remembers the page field the user was in; inserts at their cursor
-      commands.js           command registry (popup + palette)
-      launcher.js           floating 🧰 tab on the page that opens the palette
-      agent.js              client for the page agent (network interception)
-    agent/
-      page-agent.js         MAIN-world script: on-demand fetch/XHR interception
-    tools/                one ES module per tool (isolated world)
-  popup/  options/  welcome/  icons/
-```
+## Getting started
 
-Every tool is an ES module with `export default { init({ store, tool }) }`,
-loaded by `src/main.js` when its match patterns fit the page and it is enabled
-in the options. Tools build on `src/core/` for storage, HTTP/Dataverse, UI and
-command registration; the only MAIN-world code is the tiny page agent, used by
-Run Page Actions to observe the flow portal's own network responses on demand.
-Add Existing Components needs even less: it reads the URLs of the maker
-portal's own requests from the browser's Resource Timing entries — no
-responses, no headers, nothing patched in the page.
+### 1. Setup (one minute)
 
-Cross-origin requests are proxied through the service worker and validated
-against a fixed host allowlist; see [PRIVACY.md](PRIVACY.md) for the exact
-list. Tools coordinate across tabs and with each other through namespaced
-extension storage (e.g. the Solution Deployer's hand-off to Cloud Flow
-Manager).
+Right after installing, a setup page opens. It asks three things:
 
-**Credential rule (for contributors):** all requests ride the user's browser
-session (`credentials: include`); the extension never reads, extracts, or
-handles tokens or other credentials — no MSAL/page-storage token access, no
-captured `Authorization` headers. If a feature needs a bearer-token-only API,
-the feature is out of scope. Passively observing responses the page already
-loads (page agent) is the outer limit. See PRIVACY.md → "Credentials".
+**Which tools you want.** Everything for Dynamics 365 and the Power Platform is
+on. The Jira and Clockify tools are off until you need them.
 
-## Tests
+![Setup, step 1: a switch for each tool](docs/screenshots/setup-tools.png)
 
-Every change is test-driven — see [CLAUDE.md](CLAUDE.md) for the rules. Three
-layers, from fastest to most real:
+**A label for each environment.** Click **Find my environments**. The
+toolbox opens the Power Apps maker portal in a background tab, reads the list
+of environments you have access to, and closes the tab again. It suggests
+DEV / TEST / PROD from each environment's type, and you can change any
+of them. These labels drive the coloured badge on every page and the
+environment pickers in the deploy, clone and flow tools.
 
-| Layer | Where | What it covers |
-|---|---|---|
-| Unit | [`tests/unit/`](tests/unit/) | Logic with no UI — query builders, parsers, the import/export watchers, the dependency matching — on Node's built-in test runner |
-| Mock browser | [`tests/e2e/mock/`](tests/e2e/mock/) | The unpacked extension in Chromium against fake orgs ([`fake-dataverse.js`](tests/e2e/mock/fake-dataverse.js)) answering every Dataverse request — the UI flows, including everything that writes: deploy, clone, save, add, turn on/off |
-| Live browser | [`tests/e2e/live/`](tests/e2e/live/) | The unpacked extension against a real developer environment: every tool starts on Dynamics and both maker portals and loads its data. Read-only |
-| Deploy | [`tests/e2e/deploy/`](tests/e2e/deploy/) | A real deployment through the Solution Deployer: a throwaway solution goes from the developer environment to a second one (`TARGET_URL`), gets a dependency check and a cleanup, and everything is deleted again |
+![Setup, step 2: your environments, each with a DEV, TEST or PROD label](docs/screenshots/setup-environments.png)
 
-```
-npm install
-npx playwright install chromium
-npm test                    # unit + mock: no tenant, no secrets
-npm run test:e2e            # live: needs playwright.env.json (below)
-npm run test:deploy         # a real deployment to TARGET_URL and back out
-npm run test:e2e -- --headed   # watch the browsers
-npm run test:report         # the last browser run's report, with traces of failures
-npm run check               # syntax of every script + the sensitive-data scan
-node scripts/live-request.mjs GET 'solutions?$top=3'   # one real request as the test user
-```
+**Clockify**, only if you switched a Clockify tool on: your API key, workspace
+and how to round durations.
 
-The browser tests run headless, four browsers side by side, each loading the
-extension once. They fail on anything the extension logs as an error, on any
-of its own requests that fails, and — in the mock tests — on any request the
-fake orgs were not told how to answer.
+You can skip any step and come back to it: setup is available from the
+options page and from the palette (**Run setup**).
 
-**Where they run:** the pre-commit hook ([`.githooks/pre-commit`](.githooks/pre-commit),
-enabled with `git config core.hooksPath .githooks`) runs the sensitive-data
-scan, the syntax check and the unit tests. [CI](.github/workflows/ci.yml) runs
-those plus the mock tests on every push and pull request. The
-[live and deploy tests](.github/workflows/e2e.yml) run on pushes to `main`
-that change the extension or the tests, every weekday morning, and before
-every release.
+### 2. Open a tool
 
-**Live test setup:** copy `playwright.env.example.json` to
-`playwright.env.json` and fill in the developer environment's URL and a test
-user with an authenticator-app MFA method (`TOTP` is the authenticator secret
-key). Without the user's credentials the first run opens a browser and waits
-for you to sign in. The session is saved to `playwright/.auth/user.json` and
-reused until it expires. Chromium starts signed out every time; Edge would sign
-in with the account connected to Windows, which is why it is not the default
-(`"BROWSER": "msedge"` still selects it). In CI the same JSON comes from the
-`ENV_VAR_JSON` repository secret; the workflow masks its values in the log and
-uploads no screenshots, as the repository is public.
+Go to any Dynamics 365 app (`*.dynamics.com`), [make.powerapps.com](https://make.powerapps.com)
+or [make.powerautomate.com](https://make.powerautomate.com). There are three
+ways to open the toolbox:
 
-For the deploy tests, add `TARGET_URL`: a second environment the test user
-can deploy to (a free Developer environment is enough); without it they are
-skipped. The live flow-designer tests use a flow named `ppt-e2e designer
-fixture` in the developer environment and create it the first time.
+- Press **`Alt+Shift+P`** for the command palette. Start typing to filter
+  it, e.g. "browse".
+- Click the small **🧰 tab** on the right edge of the page. Drag it up or down
+  if it is in the way.
+- Click the **toolbar icon**. It lists the same commands for the page you
+  are on.
 
-`playwright.env.json`, the saved session and the test results name the tenant,
-the org and the user: they are gitignored, and the sensitive-data scan refuses
+The palette only shows the tools that work on the current page. A record form
+offers the Record Editor, the flow designer offers Find All References, and so
+on.
+
+## The tools
+
+| | Tool | Where | In one line |
+|---|---|---|---|
+| 🏷️ | [Environment Indicator](#environment-indicator) | Everywhere | A DEV/TEST/PROD badge on every page, and one-click switching |
+| 📋 | [Record Browser](#record-browser) | Dynamics 365 | Every record and every column of a table, no view to edit first |
+| ✏️ | [Record Editor](#record-editor) | Dynamics 365 | Change any value on a record, bypassing the form |
+| 🧬 | [Deep Clone](#deep-clone) | Dynamics 365 | Copy a record with its child records, even into another environment |
+| 🔍 | [Audit History](#audit-history) | Dynamics 365 | Who changed what, and when, field by field |
+| 🚀 | [Solution Deployer](#solution-deployer) | Dynamics 365 & maker portals | Deploy a solution to another environment, check dependencies first |
+| 🗂️ | [Solution History](#solution-history) | Dynamics 365 & maker portals | Live import progress, failure logs, every past export |
+| ➕ | [Add Existing Components](#add-existing-components) | Dynamics 365 & Power Apps | "Add existing" with a grid you can sort and filter |
+| 🚦 | [Turned-Off Highlighter](#turned-off-highlighter) | Maker portals | Turned-off components stand out in solution views |
+| ⚡ | [Cloud Flow Manager](#cloud-flow-manager) | Dynamics 365 & maker portals | Turn a solution's flows on or off, one at a time or in bulk |
+| 📈 | [Flow Run Monitor](#flow-run-monitor) | Dynamics 365 & maker portals | Every run across all flows, filtered, charted and traced to the flow that broke |
+| 🔗 | [Find All References](#find-all-references) | Power Automate | `Shift+F12`: what uses this step or variable |
+| ✅ | [Expression Validator](#expression-validator) | Power Automate | Finds expressions that point at actions that don't exist |
+| 🧩 | [Parse JSON Schema Builder](#parse-json-schema-builder) | Power Automate | Dynamic content back for List rows with child records |
+| ▶️ | [Run Page Actions](#run-page-actions) | Power Automate | Run tree, open child run, re-run and download on run pages |
+| 🔀 | [Classic Relationship Dialog](#classic-relationship-dialog) | Power Apps | The classic relationship dialog, back on the Relationships page |
+| ⏱️ | [Jira Clockify Timer](#jira-clockify-timer) | Jira Cloud | Start and stop a Clockify timer from a Jira issue (off by default) |
+| 🕐 | [Clockify → Dynamics 365 Sync](#clockify--dynamics-365-sync) | Dynamics 365 | Import Clockify time entries (off by default) |
+
+### Environments
+
+#### Environment Indicator
+
+Never deploy to the wrong environment again. Once an environment is labelled,
+a coloured badge (🔧 DEV, 🧪 TEST, 🔴 PROD and more) sits next to the Dynamics 365 or
+Power Apps title on every page of it.
+
+![The DEV badge next to the Dynamics 365 title](docs/screenshots/environment-badge.png)
+
+**Click the badge** to change the label, rename it, or **Switch** to another
+of your environments in the same place. Environments with similar names are
+grouped (here all three *Contoso Sales* environments), and you can rename or
+reorder the groups. On the maker portals, **Open** takes you to an
+environment's Dynamics 365 app in a new tab.
+
+<img src="docs/screenshots/environment-indicator.png" width="520" alt="The Environment Indicator dialog: this environment's label and all saved environments, grouped">
+
+Labels come from setup. To add environments later, click **Find all my
+environments…** in this dialog.
+
+### Data
+
+#### Record Browser
+
+*Palette: **Browse Records***
+
+Every record of a table with every column, without creating or editing a view.
+
+- Opened on a list, it starts from **the view you are on**: its columns come
+  first, and its filter shows as a chip you can remove to see every record.
+- **Search** looks in all columns at once and highlights the matches.
+- Click a **column header** to sort or to filter it, with operators that fit
+  the column type (begins with, on or after, in the last N days, is me…).
+- **Columns** picks what is shown, **Hide empty** drops columns with no value,
+  **Export CSV** saves what you see.
+- File columns download and image columns show a thumbnail.
+- **Click a row** to open it in the Record Editor.
+
+![Record Browser: contacts with every column, the view's filter as a chip](docs/screenshots/record-browser.png)
+
+#### Record Editor
+
+*Palette, on a record: **Edit Record Values***
+
+Every value on the record, including the ones the form doesn't show, and you
+can change any of them in place.
+
+- Click a value to edit it. Text, numbers, dates, choices, yes/no and lookups
+  are all supported. **Set Null** clears a value.
+- Changes are collected (*1 pending change*) and saved together with
+  **Save Changes**. If Dataverse refuses, you see its own error message and
+  your edits are kept.
+- Read-only columns are marked 🔒. Filter by name or value, hide empty columns,
+  or show only what you changed.
+
+![Record Editor: every column of a contact, with the job title being edited](docs/screenshots/record-editor.png)
+
+#### Deep Clone
+
+*Palette, on a record: **Clone Record***
+
+Three ways to copy the record you are on:
+
+- **Open as New**: a new form pre-filled with this record's values. Nothing is
+  saved until you save it.
+- **Deep Clone**: the record **and the child records you tick** (e.g. an
+  account with its contacts), created in one go. **Preview** shows what will
+  be written first.
+- **To Environment**: copies the record into another environment you are signed
+  in to, optionally **keeping the same GUID**. That is useful for reference
+  data that has to match across DEV, TEST and PROD.
+
+<img src="docs/screenshots/deep-clone.png" width="620" alt="Deep Clone: an account with its three contacts selected">
+
+#### Audit History
+
+*Palette: **Open Audit History***
+
+Who changed what, and when. On a record, it shows that record's history; old
+and new values are side by side for every field. Filter by user, operation and
+date (with *Today*, *7 / 30 / 90 days* shortcuts). Changes made on someone's
+behalf show both names, and lookups link to the record.
+
+![Audit History: field-level old and new values for a contact](docs/screenshots/audit-history.png)
+
+If you don't have permission to read audit history, it says so instead of
+failing.
+
+### Solutions
+
+#### Solution Deployer
+
+*Palette: **Open Solution Deployer***
+
+Move a solution from the environment you are on to another one, without
+downloading and uploading zips by hand.
+
+1. **Deploy** → **Existing Solution** → pick the solution.
+2. **Next: Choose Target**: pick one of your labelled environments, or paste
+   its URL. Optionally import *as another user* (e.g. a pipeline application
+   user) so the components are owned by them.
+3. **Deploy Now**: it exports the solution, imports it into the target and
+   publishes. A confirmation names the target first, so a PROD deployment
+   never happens by accident.
+
+![Solution Deployer: choosing the target environment](docs/screenshots/solution-deployer.png)
+
+**Check Deps** runs before a deployment and tells you what the target is
+missing: tables, option sets, flows a canvas app calls, and so on. **Add**
+puts a missing component into your solution on the source, and **Add All Missing** adds all of
 them.
+
+![Dependency check: two missing dependencies, each with an Add button](docs/screenshots/dependency-check.png)
+
+**Cleanup** removes the unmanaged solution from the target after you have
+deployed the managed version, so it no longer shows up there.
+
+You must be signed in to the target environment in another tab. The
+toolbox uses your existing sign-in and never asks for a password.
+
+#### Solution History
+
+*Palette: **Open Solution History***
+
+- **Imports**: imports and upgrades that are running right now, with live
+  progress, and every completed one with its result. **View** opens the
+  import log, filtered to the errors.
+- **Exports**: every export the environment still holds, often going back
+  years, with **Download** for the original zip.
+
+![Solution History: completed imports, one failed with its error code](docs/screenshots/solution-history.png)
+
+#### Add Existing Components
+
+*Palette: **Add Existing Components (filterable)**, or the **Filter & sort in
+Toolbox** button in the maker portal's own "Add existing" panel*
+
+The maker portal's "Add existing" panel, rebuilt as a real grid: pick the
+solution and component type, sort on any column (several at once), filter any
+column, choose the columns, then tick what you need and **Add to solution** in
+one go. Components that are already in the solution are marked. Opened from
+make.powerapps.com, it starts on the solution you are viewing.
+
+![Add Existing Components: web resources, two selected, one already in the solution](docs/screenshots/add-existing.png)
+
+#### Turned-Off Highlighter
+
+Nothing to open. On make.powerapps.com and make.powerautomate.com, every
+component whose status is **Off** in a solution view is tinted red, so a flow
+or business rule left off after an import is easy to spot. It works in every
+portal language.
+
+<img src="docs/screenshots/turned-off-highlighter.png" width="760" alt="A solution view with the turned-off flows and business rule tinted red">
+
+### Flows
+
+#### Cloud Flow Manager
+
+*Palette: **Open Cloud Flow Manager***
+
+Pick a solution and **Load Flows** to see all its cloud flows with their state.
+**Turn On / Turn Off** one flow, or tick several and use **Turn On Selected**.
+If a flow can't be turned on, you see the reason (e.g. a connection reference
+with no connection).
+
+It also flags flows whose connections are set to *"Provided by run-only
+user"*: those cannot be called as child flows. **Fix** helps you change them.
+
+![Cloud Flow Manager: six flows, three on, one flagged for its connections](docs/screenshots/cloud-flow-manager.png)
+
+#### Flow Run Monitor
+
+*Palette: **Open Flow Run Monitor***
+
+The runs of every flow in the environment in one place, not one flow at a
+time.
+
+- Filter by status, time range (1h / 24h / 7d / 30d or any dates), flow,
+  owner, trigger, duration or error code. **Export CSV** saves the result.
+- **Timeline**, **Stats** and **Chart** show when runs happen and how
+  long they take.
+- **Errors** groups failures into incidents. When a parent flow fails because
+  a child flow failed, the incident is filed under the child flow that broke,
+  even when flows in between caught the error and reported success. Pivot by
+  flow, by error, or by who called it.
+
+![Flow Run Monitor: the last 7 days of runs with their errors](docs/screenshots/flow-run-monitor.png)
+
+#### Find All References
+
+*In the flow designer: select a step and press **`Shift+F12`**, or palette:
+**Find All References***
+
+Like "Find all references" in a code editor. It shows everything that
+uses the selected step, trigger or variable: expressions, *run after*
+settings, variable writes. **References** shows what the step uses in turn.
+Click an entry to follow it, and **⌖ Canvas** selects that step in the designer.
+
+![Find All References: Compose_total and the step that reads it](docs/screenshots/find-all-references.png)
+
+#### Expression Validator
+
+*Palette, in the flow designer: **Validate Flow Expressions***
+
+Renamed a step and something broke? This lists every expression that points
+at an action or variable that doesn't exist, where it is, and what it probably
+should be.
+
+<img src="docs/screenshots/expression-validator.png" width="800" alt="Expression Validator: one reference to a step that does not exist, with a suggestion">
+
+#### Parse JSON Schema Builder
+
+*Palette, in the flow designer: **Field button in the designer: on**, then the
+🧬 button next to any input*
+
+For flows that read a Dataverse record **together with its child records**. A
+*List rows* query with `$expand` returns an array, and once you unwrap it, the
+designer offers no dynamic content any more. This tool reads the query and the
+tables' metadata and gives you:
+
+- a ready **Parse JSON schema**, so the dynamic content comes back, named,
+  with no *Apply to each* around a single record;
+- a **field picker** that inserts any field's expression at your cursor.
+
+#### Run Page Actions
+
+On a Power Automate run page, four extra buttons in the toolbar:
+
+- **Run tree**: the whole chain of connected runs, from the top trigger run
+  down to the deepest child run. Each one opens that run.
+- **Open run**: jumps straight to the child flow's run behind a "Run a child
+  flow" step. For canvas app triggers, it shows who triggered the flow.
+- **Re-run**: runs a child flow again with the same inputs, filled in for you.
+- **Download**: saves the step's inputs as JSON, plus any files.
+
+#### Classic Relationship Dialog
+
+On a table's **Relationships** page in make.powerapps.com, a **Manage
+Relationship** button opens the classic relationship dialog (1:N, N:1, N:N)
+for the relationship you pick.
+
+### Time tracking (optional)
+
+Both tools are **off by default**. Turn them on in setup or in the options page,
+then enter your Clockify API key once (Clockify → Profile settings → API).
+Both tools share the key.
+
+#### Jira Clockify Timer
+
+On a Jira Cloud issue, a button starts and stops a Clockify timer for that
+issue. If the issue isn't yet in your working status or assigned to you, it
+offers to do both.
+
+#### Clockify → Dynamics 365 Sync
+
+*Palette, in Dynamics 365: **Import from Clockify***
+
+Imports your Clockify time entries into Dynamics 365. You assign the project
+and task for each entry, and durations are rounded the way you set up.
+
+## Settings
+
+Right-click the toolbar icon → **Options**:
+
+- switch any tool on or off, or all of them at once;
+- turn the 🧰 tab off (the palette is still on `Alt+Shift+P`). You can also hover
+  the tab and click × to hide it;
+- **Run setup again**, whole or one step at a time.
+
+To change the palette shortcut, open `chrome://extensions/shortcuts` (or
+`edge://extensions/shortcuts`).
+
+## Questions and troubleshooting
+
+**I don't see the 🧰 tab or the badge.**
+Reload the page once after installing, since tools load when a page opens.
+Check that the tool is switched on in Options. The tab only appears on Dynamics
+365 and the Power Platform maker portals.
+
+**A tool asks me to sign in, or opens a tab for a moment.**
+The maker portals sign you in differently from Dynamics 365. When the
+toolbox needs an environment's data on the portal and your browser has no
+Dynamics 365 session for it yet, it opens that environment in a background tab
+so single sign-on can create one, then closes it. If it can't find the
+environment's address, it asks you for it once.
+
+**Does it need admin rights?**
+No. Every tool runs as you, with your own permissions. If you can't do
+something in Dynamics 365 yourself (read audit history, import a solution), the
+tool can't either, and it tells you why.
+
+**Is my password or token stored?**
+No. The toolbox never sees passwords or tokens. Requests use the session your
+browser already has, the same way the page itself does. It stores only your
+settings, such as which tools are on, your environment labels and an
+optional Clockify key, locally in your browser.
+
+**Which sites can it access?**
+Only `*.dynamics.com`, `*.powerapps.com`, `*.powerautomate.com`, and, for the
+optional tools, `*.atlassian.net` and `api.clockify.me`. The full list and what
+each is used for are in [PRIVACY.md](PRIVACY.md).
+
+**Something is broken or missing.**
+[Open an issue](https://github.com/AhashSritharan/power-platform-toolbox/issues).
+Say which tool, on which page, and what you expected. Please leave out
+environment names, URLs and record data. Microsoft changes the maker portals
+often, and an issue is the fastest way to get a tool working again.
+
+## Contributing
+
+Bug fixes and ideas are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains
+how the extension is built, how to run it from source and how the tests work.
 
 ## License
 
