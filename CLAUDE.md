@@ -66,6 +66,6 @@ npm run test:mock        # about a minute
 npm run test:e2e         # live, needs playwright.env.json
 npm run test:deploy      # real deployment to TARGET_URL and back
 npm run test:report      # the last browser run's report
-npm run screenshots      # retake the README screenshots (fake orgs only)
+npm run screenshots      # retake the README screenshots (dev env, redacted — review every image)
 npm run check            # syntax + sensitive-data scan
 ```

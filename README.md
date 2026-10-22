@@ -122,12 +122,11 @@ Never deploy to the wrong environment again. Once an environment is labelled,
 a coloured badge (🔧 DEV, 🧪 TEST, 🔴 PROD and more) sits next to the Dynamics 365 or
 Power Apps title on every page of it.
 
-![The DEV badge next to the Dynamics 365 title](docs/screenshots/environment-badge.png)
+![The DEV badge in the top bar of a Dynamics 365 app](docs/screenshots/environment-badge.png)
 
 **Click the badge** to change the label, rename it, or **Switch** to another
-of your environments in the same place. Environments with similar names are
-grouped (here all three *Contoso Sales* environments), and you can rename or
-reorder the groups. On the maker portals, **Open** takes you to an
+of your environments in the same place. Environments with similar addresses
+are grouped, and you can rename or reorder the groups. On the maker portals, **Open** takes you to an
 environment's Dynamics 365 app in a new tab.
 
 <img src="docs/screenshots/environment-indicator.png" width="520" alt="The Environment Indicator dialog: this environment's label and all saved environments, grouped">
@@ -153,7 +152,7 @@ Every record of a table with every column, without creating or editing a view.
 - File columns download and image columns show a thumbnail.
 - **Click a row** to open it in the Record Editor.
 
-![Record Browser: contacts with every column, the view's filter as a chip](docs/screenshots/record-browser.png)
+![Record Browser: the sample contacts, the view's filter as a chip, empty columns hidden](docs/screenshots/record-browser.png)
 
 #### Record Editor
 
@@ -187,7 +186,7 @@ Three ways to copy the record you are on:
   in to, optionally **keeping the same GUID**. That is useful for reference
   data that has to match across DEV, TEST and PROD.
 
-<img src="docs/screenshots/deep-clone.png" width="620" alt="Deep Clone: an account with its three contacts selected">
+<img src="docs/screenshots/deep-clone.png" width="620" alt="Deep Clone: an account with its contacts selected">
 
 #### Audit History
 
@@ -227,7 +226,7 @@ missing: tables, option sets, flows a canvas app calls, and so on. **Add**
 puts a missing component into your solution on the source, and **Add All Missing** adds all of
 them.
 
-![Dependency check: two missing dependencies, each with an Add button](docs/screenshots/dependency-check.png)
+![Dependency check: four components the target is missing, each with an Add button](docs/screenshots/dependency-check.png)
 
 **Cleanup** removes the unmanaged solution from the target after you have
 deployed the managed version, so it no longer shows up there.
@@ -245,7 +244,7 @@ toolbox uses your existing sign-in and never asks for a password.
 - **Exports**: every export the environment still holds, often going back
   years, with **Download** for the original zip.
 
-![Solution History: completed imports, one failed with its error code](docs/screenshots/solution-history.png)
+![Solution History: the environment's completed solution operations](docs/screenshots/solution-history.png)
 
 #### Add Existing Components
 
@@ -258,7 +257,7 @@ column, choose the columns, then tick what you need and **Add to solution** in
 one go. Components that are already in the solution are marked. Opened from
 make.powerapps.com, it starts on the solution you are viewing.
 
-![Add Existing Components: web resources, two selected, one already in the solution](docs/screenshots/add-existing.png)
+![Add Existing Components: the web resources of the environment, two selected](docs/screenshots/add-existing.png)
 
 #### Turned-Off Highlighter
 
@@ -267,7 +266,7 @@ component whose status is **Off** in a solution view is tinted red, so a flow
 or business rule left off after an import is easy to spot. It works in every
 portal language.
 
-<img src="docs/screenshots/turned-off-highlighter.png" width="760" alt="A solution view with the turned-off flows and business rule tinted red">
+<img src="docs/screenshots/turned-off-highlighter.png" width="760" alt="A solution in make.powerapps.com with its turned-off flows tinted red">
 
 ### Flows
 
@@ -283,7 +282,7 @@ with no connection).
 It also flags flows whose connections are set to *"Provided by run-only
 user"*: those cannot be called as child flows. **Fix** helps you change them.
 
-![Cloud Flow Manager: six flows, three on, one flagged for its connections](docs/screenshots/cloud-flow-manager.png)
+![Cloud Flow Manager: the six flows of a solution, three on and three off](docs/screenshots/cloud-flow-manager.png)
 
 #### Flow Run Monitor
 
@@ -301,7 +300,7 @@ time.
   even when flows in between caught the error and reported success. Pivot by
   flow, by error, or by who called it.
 
-![Flow Run Monitor: the last 7 days of runs with their errors](docs/screenshots/flow-run-monitor.png)
+![Flow Run Monitor: the last 7 days of runs, one failed with its error](docs/screenshots/flow-run-monitor.png)
 
 #### Find All References
 
@@ -313,7 +312,7 @@ uses the selected step, trigger or variable: expressions, *run after*
 settings, variable writes. **References** shows what the step uses in turn.
 Click an entry to follow it, and **⌖ Canvas** selects that step in the designer.
 
-![Find All References: Compose_total and the step that reads it](docs/screenshots/find-all-references.png)
+![Find All References in the flow designer: Compose_total and the step that reads it](docs/screenshots/find-all-references.png)
 
 #### Expression Validator
 

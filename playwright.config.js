@@ -29,7 +29,7 @@ export default defineConfig({
         { name: 'live', testMatch: /live\/.*\.spec\.js/, dependencies: ['setup'] },
         // Writes to the developer environment and TARGET_URL: deploys, checks and cleans up.
         { name: 'deploy', testMatch: /deploy\/.*\.spec\.js/, dependencies: ['setup'], timeout: 10 * 60_000 },
-        // The README's screenshots, taken against the fake orgs: npm run screenshots.
-        { name: 'screenshots', testMatch: /screenshots\/.*\.shot\.js/, timeout: 60_000 },
+        // The README's screenshots, of the developer environment with its identity redacted: npm run screenshots.
+        { name: 'screenshots', testMatch: /screenshots\/.*\.shot\.js/, dependencies: ['setup'], timeout: 5 * 60_000 },
     ],
 });

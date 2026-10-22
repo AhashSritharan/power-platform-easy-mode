@@ -9,8 +9,8 @@ import { test as setup, chromium } from '@playwright/test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { TOTP } from 'otpauth';
 import { AUTH_FILE, env, hasCredentials, requireCrmUrl } from '../support/env.js';
+import { signIn } from '../support/sign-in.js';
 
 const MANUAL_SIGN_IN_TIMEOUT = 5 * 60_000;
 
@@ -41,7 +41,7 @@ setup('authenticate', async () => {
 
     await withBrowser({ headless: hasCredentials && !!process.env.CI }, async (context, page) => {
         await page.goto(crmUrl);
-        if (hasCredentials) await signIn(page);
+        if (hasCredentials) await signIn(page, (url) => onOrg(url));
         else {
             console.log(`\n  Sign in to ${crmUrl} in the browser window — waiting up to 5 minutes…\n`);
         }
@@ -83,42 +83,4 @@ async function sessionStillWorks(crmUrl) {
     } catch {
         return false;
     }
-}
-
-// Microsoft's sign-in pages, step by step: whichever screen is showing gets
-// answered until the browser is back on the org.
-async function signIn(page) {
-    const totp = new TOTP({ algorithm: 'SHA1', digits: 6, period: 30, secret: env.totp });
-    const deadline = Date.now() + 120_000;
-    const visible = (selector) => page.locator(selector).first().isVisible().catch(() => false);
-    let codeSent = false;
-
-    while (Date.now() < deadline) {
-        if (onOrg(page.url())) return;
-        if (await visible('#otherTile')) {
-            // "Pick an account": Edge offers the account connected to Windows —
-            // never that one, always the test user.
-            await page.click('#otherTile');
-        } else if (await visible('input[type=email][name=loginfmt]')) {
-            await page.fill('input[type=email][name=loginfmt]', env.userName);
-            await page.click('input[type=submit]');
-        } else if (await visible('input[type=password][name=passwd]')) {
-            await page.fill('input[type=password][name=passwd]', env.password);
-            await page.click('input[type=submit]');
-        } else if (await visible('input[name=otc]')) {
-            if (!codeSent) {
-                await page.fill('input[name=otc]', totp.generate());
-                await page.click('input[type=submit]');
-                codeSent = true;
-            }
-        } else if (await visible('[data-value=PhoneAppOTP]')) {
-            // "Verify your identity": pick the authenticator code.
-            await page.click('[data-value=PhoneAppOTP]');
-        } else if (await visible('#KmsiCheckboxField, #idBtn_Back')) {
-            // "Stay signed in?" — No.
-            await page.click('#idBtn_Back');
-        }
-        await page.waitForTimeout(750);
-    }
-    throw new Error(`Sign-in did not reach ${env.crmUrl} — stuck on ${page.url()}`);
 }

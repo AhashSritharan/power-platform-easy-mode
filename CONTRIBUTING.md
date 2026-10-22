@@ -141,13 +141,21 @@ fixture` in the developer environment and create it the first time.
 
 The README's screenshots in [`docs/screenshots/`](docs/screenshots/) are taken
 by [`tests/e2e/screenshots/readme.shot.js`](tests/e2e/screenshots/readme.shot.js):
-each tool opened against the mock tests' fake orgs, with placeholder names
-only. After a UI change, run `npm run screenshots` and commit the images that
-changed.
+the real extension on the developer environment's real pages, as the live
+tests' user. They show Microsoft's sample data plus demo content the script
+creates the first time and then keeps
+([`demo-data.js`](tests/e2e/screenshots/demo-data.js): a *Contoso Sales*
+solution with a few cloud flows, a custom table and a choice). After a UI
+change, run `npm run screenshots` and commit the images that changed.
 
-Never add a screenshot of a real environment: the sensitive-data scan cannot
-read images, so nothing would catch a tenant name, a user or an org host in
-one.
+The sensitive-data scan cannot read images, so
+[`redact.js`](tests/e2e/screenshots/redact.js) does that job: right before
+each capture it replaces every name that identifies the tenant, an org or the
+user — hosts, environment and app names, the user's name, email and initials,
+ids, anything in `.sensitive-denylist` — with a placeholder, and refuses the
+capture if any of it is still on the page before or after. **Look at every
+image before committing it anyway**: text drawn into a picture or a canvas is
+beyond what it can read.
 
 ## Never commit identifying data
 
