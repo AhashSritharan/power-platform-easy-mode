@@ -1,5 +1,8 @@
 # Chrome Web Store listing — Power Platform Toolbox
 
+**Live:** https://chromewebstore.google.com/detail/power-platform-toolbox/jdpbkpcoffofnpbeokkhfgfkjhjdbbeo
+(2.0.0, October 2026). The README's Install section links here.
+
 Everything to paste into the [developer dashboard](https://chrome.google.com/webstore/devconsole)
 when publishing. One-time $5 registration fee applies to new developer accounts.
 

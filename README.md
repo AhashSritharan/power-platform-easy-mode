@@ -23,24 +23,30 @@ does, you are already allowed to do. The toolbox just makes it quicker.
 
 ## Install
 
-Works in **Google Chrome** and **Microsoft Edge**.
+### [➜ Get it from the Chrome Web Store](https://chromewebstore.google.com/detail/power-platform-toolbox/jdpbkpcoffofnpbeokkhfgfkjhjdbbeo)
 
-The Chrome Web Store listing is in review. Until it is live, install it from
-the latest release. It takes about a minute:
+- **Chrome:** open the store page and click **Add to Chrome**.
+- **Microsoft Edge:** open the same page, click **Allow extensions from other
+  stores** in the banner at the top, then **Get** (labelled **Add to Chrome**
+  on some versions).
+
+Then pin it to the toolbar: click the puzzle-piece icon and the pin next to
+*Power Platform Toolbox*. Updates install automatically.
+
+<details>
+<summary>Can't use the store? Install it by hand</summary>
 
 1. Download **`power-platform-toolbox-extension.zip`** from the
    [latest release](https://github.com/AhashSritharan/power-platform-toolbox/releases/latest)
-   and unzip it into a folder you will keep. The browser loads the extension
-   from that folder, so don't delete it.
-2. Open the extensions page: type `chrome://extensions` (Chrome) or
-   `edge://extensions` (Edge) in the address bar.
-3. Turn on **Developer mode** (top right in Chrome, left side in Edge).
-4. Click **Load unpacked** and pick the folder you unzipped.
-5. Pin the toolbox to the toolbar: click the puzzle-piece icon and then the pin
-   next to *Power Platform Toolbox*.
+   and unzip it into a folder you will keep.
+2. Open `chrome://extensions` (or `edge://extensions`) and turn on
+   **Developer mode**.
+3. Click **Load unpacked** and pick the unzipped folder.
 
-To update later, download the new zip, replace the folder's contents and click
-the reload icon on the extension's card.
+A manual install doesn't update itself. To update it, download the new zip,
+replace the folder's contents and click the reload icon on the extension's card.
+
+</details>
 
 ## Getting started
 
