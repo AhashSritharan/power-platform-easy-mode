@@ -436,7 +436,8 @@ async function fetchCloneableRelationships(entityName) {
     if (relationshipCache[entityName]) return relationshipCache[entityName];
     try {
         const data = await dv.get(`/EntityDefinitions(LogicalName='${entityName}')/OneToManyRelationships?$select=SchemaName,ReferencedEntity,ReferencingEntity,ReferencingAttribute,ReferencedEntityNavigationPropertyName`);
-        const excludedEntities = ['activitypointer', 'activityparty', 'adx_externalidentity', 'customeraddress'];
+        // sharepointdocument is a virtual table: even counting it fails (400) where SharePoint is not set up.
+        const excludedEntities = ['activitypointer', 'activityparty', 'adx_externalidentity', 'customeraddress', 'sharepointdocument'];
         const excludedSchemaParts = [
             '_AsyncOperations', '_BulkDeleteFailures', '_DuplicateMatchingRecord', '_DuplicateBaseRecord',
             '_MailboxTrackingFolders', '_PrincipalObjectAttributeAccesses', '_ProcessSession', '_SyncErrors',

@@ -105,6 +105,22 @@ test.describe('Deep Clone', () => {
         expect(org.calls('POST', '/contacts'), 'children ride along, never posted separately').toHaveLength(0);
     });
 
+    // SharePoint documents are a virtual table: counting them answers 400 —
+    // "Connection to the server failed" on an org without SharePoint, as a live
+    // org does — and a deep insert could not create them anyway.
+    test('"Deep Clone" leaves out the SharePoint documents relationship', async ({ page, org }) => {
+        accountWithContacts(org);
+        org.entities.account.oneToMany.push({ schemaName: 'Account_SharepointDocument', navigation: 'Account_SharepointDocument', entity: 'sharepointdocument', attribute: 'regardingobjectid' });
+        org.on('GET', `/accounts(${ACCOUNT})/Account_SharepointDocument`, () => ({
+            status: 400, json: { error: { code: '0x800608b5', message: 'Connection to the server failed. Please contact your administrator.' } },
+        }));
+        const dialog = await openClone(page, org);
+        await dialog.locator('.dc-seg-item', { hasText: '📋 Deep Clone' }).click();
+        await expect(dialog.locator('.dc-rel', { hasText: 'contact_customer_accounts' }).locator('.count')).toHaveText('2 records');
+        await expect(dialog.locator('.dc-loading, .dc-spinner').filter({ visible: true })).toHaveCount(0);
+        expect(org.calls('GET', `/accounts(${ACCOUNT})/Account_SharepointDocument`)).toHaveLength(0);
+    });
+
     test('shows Dataverse\'s message when the clone is refused', async ({ page, org, problems }) => {
         accountWithContacts(org);
         org.on('POST', '/accounts', () => ({ status: 400, json: { error: { code: '0x80040237', message: 'A record with matching key values already exists.' } } }));
