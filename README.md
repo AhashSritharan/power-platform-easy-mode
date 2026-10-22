@@ -184,6 +184,6 @@ them.
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
 Tool icons are from [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) by Microsoft, MIT licensed — see [extension/src/core/icons.LICENSE](extension/src/core/icons.LICENSE).
