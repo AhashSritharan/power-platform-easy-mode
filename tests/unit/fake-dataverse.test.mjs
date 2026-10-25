@@ -145,3 +145,19 @@ test('entity reads, writes and the unhandled list', async () => {
     assert.equal(org.calls('POST', '/ExportSolutionAsync').length, 1);
     assert.equal(org.calls('GET', /^\/solutions\(/).length, 2);
 });
+
+// A table's metadata is also read by its MetadataId, and a missing id answers
+// as a live org does: 404 with 0x80060888, not the row error 0x80040217.
+test('entity metadata by MetadataId', async () => {
+    const org = new FakeOrg('contoso.crm4.dynamics.com');
+    org.entity({ logicalName: 'account', metadataId: guid(70) });
+    const byId = await send(org, 'GET', `/EntityDefinitions(${guid(70)})?$select=LogicalName`);
+    assert.equal(byId.status, 200);
+    assert.equal(JSON.parse(byId.body).LogicalName, 'account');
+    const byName = await send(org, 'GET', "/EntityDefinitions(LogicalName='account')?$select=MetadataId");
+    assert.equal(JSON.parse(byName.body).MetadataId, guid(70));
+    const missing = await send(org, 'GET', `/EntityDefinitions(${guid(71)})?$select=MetadataId`);
+    assert.equal(missing.status, 404);
+    assert.equal(JSON.parse(missing.body).error.code, '0x80060888');
+    assert.deepEqual(org.unhandled, []);
+});

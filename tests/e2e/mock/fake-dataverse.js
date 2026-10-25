@@ -67,10 +67,12 @@ export class FakeOrg {
      * child entity's rows whose `_<attribute>_value` is the parent's id, for
      * /set(id)/navigation and $expand alike. Rows are stored as given: put the
      * annotations a test needs (FormattedValue, lookuplogicalname) on them.
+     * `metadataId` fixes the table's MetadataId, for tests that compare it
+     * across orgs (a standard table has the same one everywhere).
      */
-    entity({ logicalName, entitySetName = `${logicalName}s`, primaryId = `${logicalName}id`, primaryName = 'name', displayName, attributes = [], oneToMany = [], rows = [] }) {
+    entity({ logicalName, metadataId, entitySetName = `${logicalName}s`, primaryId = `${logicalName}id`, primaryName = 'name', displayName, attributes = [], oneToMany = [], rows = [] }) {
         this.entities ??= {};
-        this.entities[logicalName] = { logicalName, entitySetName, primaryId, primaryName, displayName: displayName ?? logicalName, attributes, oneToMany };
+        this.entities[logicalName] = { logicalName, metadataId, entitySetName, primaryId, primaryName, displayName: displayName ?? logicalName, attributes, oneToMany };
         return this.table(entitySet(this.entities[logicalName]), rows);
     }
 
@@ -348,18 +350,25 @@ const optionMetadata = ([value, text, color = null]) => ({ Value: value, Color: 
 
 FakeOrg.prototype.metadata = function metadata(req) {
     const entities = this.entities ?? {};
-    const m = req.path.match(/^\/EntityDefinitions(?:\(LogicalName='([^']+)'\))?(?:\/(Attributes|ManyToOneRelationships|OneToManyRelationships)(?:\(LogicalName='([^']+)'\))?(?:\/Microsoft\.Dynamics\.CRM\.(\w+))?)?$/);
+    const m = req.path.match(/^\/EntityDefinitions(?:\((?:LogicalName='([^']+)'|([0-9a-f-]{36}))\))?(?:\/(Attributes|ManyToOneRelationships|OneToManyRelationships)(?:\(LogicalName='([^']+)'\))?(?:\/Microsoft\.Dynamics\.CRM\.(\w+))?)?$/);
     if (!m) return undefined;
-    const [, name, part, attrName, cast] = m;
+    const [, name, metadataId, part, attrName, cast] = m;
+    const idOf = (e) => e.metadataId ?? guid(4000 + Object.keys(entities).indexOf(e.logicalName));
     const entityMetadata = (e) => ({
-        MetadataId: guid(4000 + Object.keys(entities).indexOf(e.logicalName)), LogicalName: e.logicalName,
+        MetadataId: idOf(e), LogicalName: e.logicalName,
         EntitySetName: e.entitySetName, PrimaryIdAttribute: e.primaryId, PrimaryNameAttribute: e.primaryName,
         DisplayName: labelOf(e.displayName), IconSmallName: null, IconVectorName: null, ObjectTypeCode: 10000,
         IsValidForAdvancedFind: true, IsAuditEnabled: { Value: true, CanBeChanged: true },
     });
+    if (metadataId) {
+        const e = Object.values(entities).find((x) => idOf(x) === metadataId.toLowerCase());
+        if (!e) return { status: 404, json: { error: { code: '0x80060888', message: `EntityMetadata With Id = ${metadataId} does not exist.` } } };
+        if (part) return undefined;
+        return select(entityMetadata(e), req.query.get('$select'));
+    }
     if (!name) return { value: query(Object.values(entities).map(entityMetadata), req.query) };
     const e = entities[name];
-    if (!e) return { status: 404, json: { error: { code: '0x80040217', message: `Could not find an entity with name ${name}.` } } };
+    if (!e) return { status: 404, json: { error: { code: '0x80060888', message: `EntityMetadata With Id = LogicalName='${name}' does not exist.` } } };
     if (!part) return select(entityMetadata(e), req.query.get('$select'));
     if (part === 'OneToManyRelationships') {
         const relationships = e.oneToMany.map((r) => ({

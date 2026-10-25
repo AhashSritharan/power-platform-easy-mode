@@ -49,6 +49,35 @@ test.describe('Environment Indicator', () => {
         expect(await mappings(serviceWorker)).not.toHaveProperty(org.environmentId);
     });
 
+    // Switching keeps you in the same app and table; a record the other
+    // environment does not have opens the table's list there, never the app's
+    // "Record Is Unavailable". The URL rules themselves are unit tested
+    // (tests/unit/environment-switch.test.mjs).
+    test('switching from a record the other environment lacks opens its list there, in the same app', async ({ page, org, targetOrg, serviceWorker }) => {
+        await serviceWorker.evaluate(({ here, there }) => chrome.storage.local.set({
+            'vals/environment-indicator/envIndicator_mappings': {
+                [here.id]: { type: 'DEV', name: 'Contoso DEV', nameSource: 'org' },
+                [there.id]: { type: 'PROD', name: 'Contoso PROD', nameSource: 'org' },
+            },
+            'vals/environment-indicator/envIndicator_hostCache': { [here.host]: here.id, [there.host]: there.id },
+        }), {
+            here: { id: org.environmentId, host: org.host },
+            there: { id: targetOrg.environmentId, host: targetOrg.host },
+        });
+        org.table('appmodules', [{ appmoduleid: guid(100), uniquename: 'contoso_Sales' }]);
+        targetOrg.table('appmodules', [{ appmoduleid: guid(200), uniquename: 'contoso_Sales' }]);
+        org.entity({ logicalName: 'account', rows: [{ accountid: guid(300) }] });
+        targetOrg.entity({ logicalName: 'account', rows: [] });
+
+        await gotoOrg(page, org, `appid=${guid(100)}&pagetype=entityrecord&etn=account&id=${guid(300)}`);
+        await badge(page).click();
+        const dialog = page.locator('.ppt-dialog', { hasText: '🏷️ Environment Indicator' });
+        await dialog.locator('.env-row').filter({ hasText: 'Contoso PROD' }).getByRole('button', { name: 'Switch' }).click();
+
+        await expect(page).toHaveURL(`${targetOrg.origin}/main.aspx?appid=${guid(200)}&pagetype=entitylist&etn=account`);
+        expect(targetOrg.calls('GET', `/accounts(${guid(300)})`), 'the record was looked for first').toHaveLength(1);
+    });
+
     // The maker portal has its environment in the URL, and switching there
     // moves the portal; opening an environment's Dynamics app happens next to it.
     test("on the maker portal, opens an environment's Dynamics app in a new tab", async ({ page, org, targetOrg, serviceWorker, portal, extensionContext }) => {

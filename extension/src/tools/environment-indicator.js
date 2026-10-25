@@ -1,7 +1,8 @@
 // Environment Indicator (native).
 // Shows a colored DEV/TEST/UAT/STAGING/PROD badge near the navbar, lets the
-// user label environments, and switches between environments — resolving
-// component GUIDs so deep links inside solutions keep working across envs.
+// user label environments, and switches between environments — onto the same
+// app, record, table, solution or flow when the target has it, and the nearest
+// page it does have when not (shared/environment-switch.js).
 //
 // Environments are grouped into families ("Smart Workflows DEV/TEST/PROD" vs
 // "Antrag Naturgefahren DEV/TEST/PROD"): the family you are in is listed first
@@ -14,80 +15,32 @@
 // Dynamics pages (replaces the old MAIN-world Xrm dependency). Mappings are
 // also published to legacy tools via src/gm/gm-shim.js (PowerPlatformEnvironments).
 
-import { request } from '../core/http.js';
+import { HttpError, request } from '../core/http.js';
 import { Dataverse } from '../core/dataverse.js';
-import { ENV_ID, envIdForUrl, envIdFromUrl } from '../core/context.js';
+import { envIdForUrl, envIdFromUrl } from '../core/context.js';
 import * as ui from '../core/ui.js';
 import * as commands from '../core/commands.js';
 import {
     ENV_TYPES, backfillNames, deriveGroup, groupEnvironments, groupOfEnvId,
     loadEnvironments, normalizeRecord, removeEnvironment, resolveOrgName, updateEnvironment,
 } from './shared/environments.js';
+import { switchUrl } from './shared/environment-switch.js';
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// Cross-environment OData fetch (relayed via the service worker).
+// Cross-environment OData read (relayed via the service worker): the JSON,
+// or null when the row does not exist.
 async function odata(host, path) {
-    const response = await request({
-        url: `https://${host}${path}`,
-        headers: { 'OData-MaxVersion': '4.0', 'OData-Version': '4.0', 'Accept': 'application/json' },
-        credentials: true,
-    });
-    return response.json();
+    try {
+        const response = await request({
+            url: `https://${host}/api/data/v9.2/${path}`,
+            headers: { 'OData-MaxVersion': '4.0', 'OData-Version': '4.0', 'Accept': 'application/json' },
+            credentials: true,
+        });
+        return response.json();
+    } catch (e) {
+        if (e instanceof HttpError && e.status === 404) return null;
+        throw e;
+    }
 }
-
-// How to translate a component GUID between environments: read its logical
-// name in the source, look the name up in the target.
-const COMPONENT_RESOLVERS = {
-    entities: {
-        fetchName: (h, id) => `/api/data/v9.2/EntityDefinitions(${id})?$select=LogicalName`,
-        nameField: 'LogicalName',
-        lookup: (name) => `/api/data/v9.2/EntityDefinitions(LogicalName='${name}')?$select=MetadataId`,
-        idField: 'MetadataId', single: true,
-    },
-    optionsets: {
-        fetchName: (h, id) => `/api/data/v9.2/GlobalOptionSetDefinitions(${id})?$select=Name`,
-        nameField: 'Name',
-        lookup: (name) => `/api/data/v9.2/GlobalOptionSetDefinitions(Name='${name}')?$select=MetadataId`,
-        idField: 'MetadataId', single: true,
-    },
-    webresources: {
-        fetchName: (h, id) => `/api/data/v9.2/webresourceset(${id})?$select=name`,
-        nameField: 'name',
-        lookup: (name) => `/api/data/v9.2/webresourceset?$filter=name eq '${encodeURIComponent(name)}'&$select=webresourceid&$top=1`,
-        idField: 'webresourceid', single: false,
-    },
-    canvasapps: {
-        fetchName: (h, id) => `/api/data/v9.2/canvasapps(${id})?$select=name`,
-        nameField: 'name',
-        lookup: (name) => `/api/data/v9.2/canvasapps?$filter=name eq '${encodeURIComponent(name)}'&$select=canvasappid&$top=1`,
-        idField: 'canvasappid', single: false,
-    },
-    workflows: {
-        fetchName: (h, id) => `/api/data/v9.2/workflows(${id})?$select=name`,
-        nameField: 'name',
-        lookup: (name) => `/api/data/v9.2/workflows?$filter=name eq '${encodeURIComponent(name)}'&$select=workflowid&$top=1`,
-        idField: 'workflowid', single: false,
-    },
-    sitemaps: {
-        fetchName: (h, id) => `/api/data/v9.2/sitemaps(${id})?$select=sitemapuniqueid`,
-        nameField: 'sitemapuniqueid',
-        lookup: (name) => `/api/data/v9.2/sitemaps?$filter=sitemapuniqueid eq '${encodeURIComponent(name)}'&$select=sitemapid&$top=1`,
-        idField: 'sitemapid', single: false,
-    },
-    connectionreferences: {
-        fetchName: (h, id) => `/api/data/v9.2/connectionreferences(${id})?$select=connectionreferencelogicalname`,
-        nameField: 'connectionreferencelogicalname',
-        lookup: (name) => `/api/data/v9.2/connectionreferences?$filter=connectionreferencelogicalname eq '${encodeURIComponent(name)}'&$select=connectionreferenceid&$top=1`,
-        idField: 'connectionreferenceid', single: false,
-    },
-    'environment%20variables': {
-        fetchName: (h, id) => `/api/data/v9.2/environmentvariabledefinitions(${id})?$select=schemaname`,
-        nameField: 'schemaname',
-        lookup: (name) => `/api/data/v9.2/environmentvariabledefinitions?$filter=schemaname eq '${encodeURIComponent(name)}'&$select=environmentvariabledefinitionid&$top=1`,
-        idField: 'environmentvariabledefinitionid', single: false,
-    },
-};
 
 export default {
     async init({ store }) {
@@ -164,120 +117,21 @@ export default {
             await updateEnvironment(envId, { name, nameSource: 'org' }, store);
         }
 
-        // ── Environment switching (with deep-link GUID resolution) ──────
-        async function resolveComponent(sourceHost, targetHost, type, sourceId, parentEntity) {
-            try {
-                if (type === 'attributes') {
-                    if (!parentEntity) return null;
-                    const source = await odata(sourceHost,
-                        `/api/data/v9.2/EntityDefinitions(LogicalName='${parentEntity}')/Attributes(${sourceId})?$select=LogicalName`);
-                    if (!source.LogicalName) return null;
-                    const target = await odata(targetHost,
-                        `/api/data/v9.2/EntityDefinitions(LogicalName='${parentEntity}')/Attributes(LogicalName='${source.LogicalName}')?$select=MetadataId`);
-                    return target.MetadataId ?? null;
-                }
-                const resolver = COMPONENT_RESOLVERS[type];
-                if (!resolver) return null;
-                const source = await odata(sourceHost, resolver.fetchName(sourceHost, sourceId));
-                const name = source[resolver.nameField];
-                if (!name) return null;
-                const target = await odata(targetHost, resolver.lookup(name));
-                return resolver.single ? (target[resolver.idField] ?? null) : (target.value?.[0]?.[resolver.idField] ?? null);
-            } catch (e) {
-                console.warn(`[Environment Indicator] could not resolve ${type} ${sourceId}:`, e);
-                return null;
-            }
-        }
-
-        async function resolveSolutionPath(solutionPath, targetEnvId) {
-            try {
-                const sourceHost = hostForEnvId(currentEnvId() ?? '');
-                const targetHost = hostForEnvId(targetEnvId);
-                if (!sourceHost || !targetHost) return null;
-
-                const segments = solutionPath.replace(/^\//, '').split('/');
-                if (segments[0] !== 'solutions' || !segments[1]) return null;
-
-                const source = await odata(sourceHost, `/api/data/v9.2/solutions(${segments[1]})?$select=uniquename`);
-                if (!source.uniquename) return null;
-                const target = await odata(targetHost,
-                    `/api/data/v9.2/solutions?$filter=uniquename eq '${encodeURIComponent(source.uniquename)}'&$select=solutionid&$top=1`);
-                if (!target.value?.length) return null;
-
-                const resolved = ['solutions', target.value[0].solutionid];
-                let parentEntity = null;
-                for (let i = 2; i < segments.length;) {
-                    if (i + 1 < segments.length && GUID.test(segments[i + 1])) {
-                        const [type, sourceGuid] = [segments[i], segments[i + 1]];
-                        if (type === 'entities') {
-                            try {
-                                const entity = await odata(sourceHost, `/api/data/v9.2/EntityDefinitions(${sourceGuid})?$select=LogicalName`);
-                                parentEntity = entity.LogicalName;
-                            } catch { /* keep last known parent */ }
-                        }
-                        const targetGuid = await resolveComponent(sourceHost, targetHost, type, sourceGuid, parentEntity);
-                        resolved.push(type, targetGuid ?? sourceGuid);
-                        i += 2;
-                    } else {
-                        resolved.push(segments[i]);
-                        i += 1;
-                    }
-                }
-                return '/' + resolved.join('/');
-            } catch (e) {
-                console.warn('[Environment Indicator] could not resolve path in target environment:', e);
-                return null;
-            }
-        }
-
+        // ── Environment switching ────────────────────────────────────────
+        // The same page in the target, checked id by id against it — see
+        // shared/environment-switch.js.
         async function switchToEnvironment(storedEnvId) {
-            const { pathname } = location;
-            // Stored ids are lowercased; URLs want "Default-{guid}" as written.
-            const targetEnvId = envIdForUrl(storedEnvId);
-
-            // Maker portals: swap the /environments/{guid} path segment
-            if (hostname.includes('make.powerapps.com') || hostname.includes('make.powerautomate.com')) {
-                const newPath = pathname.replace(
-                    new RegExp(`/environments/${ENV_ID.source}`, 'i'), '/environments/' + targetEnvId);
-                if (newPath !== pathname) {
-                    // Power Apps: component GUIDs differ per env — resolve via logical names
-                    const solutionPath = hostname.includes('make.powerapps.com')
-                        ? pathname.match(/(\/solutions\/[0-9a-f-]{36}.*)/i)?.[1] : null;
-                    if (solutionPath) {
-                        ui.toast('Resolving link in target environment…');
-                        const prefix = newPath.slice(0, newPath.indexOf('/solutions/'));
-                        const resolved = await resolveSolutionPath(solutionPath, targetEnvId);
-                        location.href = location.origin + prefix + (resolved ?? '/solutions');
-                        return;
-                    }
-                    location.href = location.origin + newPath + location.search + location.hash;
-                    return;
-                }
-            }
-
-            // Canvas player: swap /e/{guid}
-            if (hostname.endsWith('.powerapps.com')) {
-                const newPath = pathname.replace(
-                    new RegExp(`/e/${ENV_ID.source}`, 'i'), '/e/' + targetEnvId);
-                if (newPath !== pathname) {
-                    location.href = location.origin + newPath + location.search + location.hash;
-                    return;
-                }
-            }
-
-            // Dynamics: jump to the cached hostname of the target environment
-            if (isDynamics) {
-                const targetHost = hostForEnvId(targetEnvId);
-                if (targetHost && targetHost !== hostname) {
-                    const url = new URL(location.href);
-                    url.hostname = targetHost;
-                    url.searchParams.delete('appid');
-                    location.href = url.href;
-                    return;
-                }
-            }
-
-            location.href = 'https://make.powerapps.com/environments/' + targetEnvId;
+            const targetHost = hostForEnvId(storedEnvId);
+            if (targetHost) ui.toast('Opening the same page in the other environment…');
+            const sourceEnvId = currentEnvId();
+            const url = await switchUrl(location.href, {
+                // Stored ids are lowercased; URLs want "Default-{guid}" as written.
+                targetEnvId: envIdForUrl(storedEnvId),
+                sourceHost: isDynamics ? hostname : (sourceEnvId ? hostForEnvId(sourceEnvId) : null),
+                targetHost,
+                get: odata,
+            });
+            location.href = url;
         }
 
         // ── Badge ────────────────────────────────────────────────────────
