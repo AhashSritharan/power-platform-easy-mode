@@ -8,6 +8,7 @@
 import { test, expect } from '../live/fixtures.js';
 import { env } from '../support/env.js';
 import { gotoDynamics, runCommand } from '../support/helpers.js';
+import { queueStall } from '../support/async-queue.js';
 
 test.skip(!env.targetUrl, 'TARGET_URL is not configured');
 test.describe.configure({ mode: 'serial' });
@@ -38,6 +39,30 @@ async function onOrg(context, origin, fn) {
 }
 
 const first = async (api, path) => (await api('GET', path)).json?.value?.[0] ?? null;
+
+// Set when the deploy is skipped for a stalled queue: the tests after it need
+// the solution on the target.
+let queueStalled = null;
+const QUEUE_LIMIT_MS = 5 * 60_000;
+
+/** This run's export (source) or import (target) job that sat queued past the limit, if any. */
+async function stalledDeployJob(context, since) {
+    // A minute's margin for the runner's clock against the server's.
+    const after = new Date(since - 60_000).toISOString();
+    for (const [origin, name, where] of [[env.crmUrl, 'ExportSolution', 'source'], [env.targetUrl, 'ImportSolution', 'target']]) {
+        const jobs = await onOrg(context, origin, async (api) => (await api('GET',
+            `/asyncoperations?$select=name,createdon,startedon&$filter=name eq '${name}' and createdon ge ${after}`)).json?.value ?? []);
+        const stall = queueStall(jobs, { limitMs: QUEUE_LIMIT_MS });
+        if (stall) return `the ${where} environment left its ${name} job queued for ${Math.round(stall.waitMs / 60_000)} min`;
+    }
+    return null;
+}
+
+function skipForQueue(reason) {
+    // Shown on the run's summary, so a skipped deploy is not mistaken for a pass.
+    if (process.env.GITHUB_ACTIONS) console.log(`::warning title=Deploy tests skipped::Dataverse's async queue stalled: ${reason}.`);
+    test.skip(true, `Dataverse's async queue stalled: ${reason}`);
+}
 
 test.beforeAll(async ({ extensionContext }) => {
     await onOrg(extensionContext, env.crmUrl, async (api) => {
@@ -93,9 +118,17 @@ test('deploys a solution to the target environment', async ({ page, extensionCon
     await panel.getByRole('button', { name: 'Next: Choose Target →' }).click();
     await setTarget(panel);
     await panel.locator('.sd-footer').getByRole('button', { name: '🚀 Deploy Now' }).click();
+    const deployedAt = Date.now();
     await page.locator('.sd-modal', { hasText: 'Confirm Deployment' }).getByRole('button', { name: /Deploy/ }).click();
 
-    await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 8 * 60_000 });
+    try {
+        await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 8 * 60_000 });
+    } catch (error) {
+        // Only a queue that never ran the job excuses it; anything else is the tool's.
+        queueStalled = await stalledDeployJob(extensionContext, deployedAt);
+        if (queueStalled) skipForQueue(queueStalled);
+        throw error;
+    }
     await expect(panel).toContainText('No cloud flows in this solution.', { timeout: 60_000 });
 
     await onOrg(extensionContext, env.targetUrl, async (api) => {
@@ -106,6 +139,7 @@ test('deploys a solution to the target environment', async ({ page, extensionCon
 });
 
 test('finds no missing dependencies for it on the target', async ({ page }) => {
+    if (queueStalled) skipForQueue(queueStalled);
     test.setTimeout(5 * 60_000);
     const panel = await openDeployer(page);
     await panel.getByRole('button', { name: '🔍 Check Deps' }).click();
@@ -117,6 +151,7 @@ test('finds no missing dependencies for it on the target', async ({ page }) => {
 });
 
 test('cleans the solution up on the target, keeping its components', async ({ page, extensionContext }) => {
+    if (queueStalled) skipForQueue(queueStalled);
     test.setTimeout(5 * 60_000);
     const panel = await openDeployer(page);
     await panel.getByRole('button', { name: '🧹 Cleanup' }).click();
