@@ -232,7 +232,13 @@ them.
 ![Dependency check: four components the target is missing, each with an Add button](docs/screenshots/dependency-check.png)
 
 **Cleanup** removes the unmanaged solution from the target after you have
-deployed the managed version, so it no longer shows up there.
+deployed the managed version, so it no longer shows up there. Its components
+keep their unmanaged layer on top, even after a managed import with "overwrite
+unmanaged customizations", and later managed imports without that option don't
+take effect. Tick **Also remove active customizations** to remove those layers
+too, so the environment is as if you had never deployed unmanaged. Do that only
+after the managed release with the same changes is in; before, it brings back
+the previous managed version.
 
 You must be signed in to the target environment in another tab. The
 toolbox uses your existing sign-in and never asks for a password.

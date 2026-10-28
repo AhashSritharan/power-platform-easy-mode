@@ -181,6 +181,28 @@ test.describe('Solution Deployer — cleanup', () => {
         expect(targetOrg.calls('POST', '/RemoveActiveCustomization')).toHaveLength(0);
     });
 
+    test('says kept unmanaged layers stay on top of later managed imports', async ({ page, org, targetOrg }) => {
+        // A managed import with "overwrite unmanaged customizations" copies its values into
+        // the unmanaged layer but does not remove it, so the texts must not promise that.
+        org.table('solutions', [{ ...SOLUTION }]);
+        targetOrg.table('solutions', [{ ...SOLUTION, solutionid: guid(12) }]);
+        const panel = await openDeployer(page, org);
+        await panel.getByRole('button', { name: '🧹 Cleanup' }).click();
+        await expect(panel).toContainText('keep their unmanaged layer on top');
+        await expect(panel).toContainText('Deploy the managed release with the same changes first');
+        await expect(panel).not.toContainText('get overwritten by the next managed import');
+        await setTarget(panel, targetOrg);
+        const name = panel.getByPlaceholder('e.g. QuickDeploy_20260512');
+        await name.fill('Core');
+        await name.press('Tab');
+        await panel.locator('.sd-footer').getByRole('button', { name: '🧹 Run Cleanup' }).click();
+        const modal = page.locator('.sd-modal');
+        await expect(modal).toContainText('keep their unmanaged layer on top until it is removed');
+        await expect(modal).not.toContainText('the next managed import overwrites them');
+        await modal.getByRole('button', { name: '🧹 Run Cleanup' }).click();
+        await expect(panel).toContainText('the unmanaged layers stay on top, even after a managed import, until they are removed');
+    });
+
     test('removes each component\'s unmanaged layer first when asked to', async ({ page, org, targetOrg }) => {
         org.table('solutions', [{ ...SOLUTION }]);
         targetOrg.table('solutions', [{ ...SOLUTION, solutionid: guid(12) }]);

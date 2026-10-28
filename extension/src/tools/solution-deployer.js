@@ -834,7 +834,7 @@ async function runCleanupPipeline() {
             }
             addLog('info', `Results: ${successCount} removed, ${skipCount} skipped, ${errorCount} errors.`);
         } else {
-            addLog('info', 'Keeping active customizations — the unmanaged layers stay until a managed import overwrites them.');
+            addLog('info', 'Keeping active customizations — the unmanaged layers stay on top, even after a managed import, until they are removed.');
         }
 
         addLog('info', `Deleting solution "${solName}" on target…`);
@@ -1388,7 +1388,7 @@ async function showCleanupConfirmation() {
     const warnings = [];
     const isSameEnv = !!(sourceInfo?.envId && targetInfo?.envId && sourceInfo.envId === targetInfo.envId);
     if (isSameEnv) warnings.push({ level: 'error', icon: '🚫', text: 'You are cleaning up the same environment you are on!' });
-    if (removeLayers) warnings.push({ level: 'warning', icon: '⚠️', text: 'Active customizations will be reverted to their managed state — your unmanaged changes on this environment are lost.' });
+    if (removeLayers) warnings.push({ level: 'warning', icon: '⚠️', text: 'Active customizations will be reverted to their managed state — your unmanaged changes on this environment are lost. Deploy the managed release with the same changes first, or the previous managed version comes back.' });
     if (removeLayers && targetInfo?.label === 'PROD') warnings.push({ level: 'warning', icon: '🔴', text: 'Target is PRODUCTION — removing layers on PROD is risky.' });
     if (targetInfo?.label === 'DEV') warnings.push({ level: 'warning', icon: '⚠️', text: 'Target is DEV — cleanup is usually done on TEST/UAT/PROD after deploying managed.' });
     if (!targetInfo) warnings.push({ level: 'info', icon: 'ℹ️', text: 'Target environment type is unknown. Set it up in the Environment Indicator.' });
@@ -1412,7 +1412,7 @@ async function showCleanupConfirmation() {
                 ui.el('strong', { textContent: 'What will happen: ' }),
                 removeLayers
                     ? '1. Remove active customization (unmanaged layer) from each component. 2. Delete the unmanaged solution from the target.'
-                    : 'Delete the unmanaged solution from the target. Components and their active customizations stay — the next managed import overwrites them.',
+                    : 'Delete the unmanaged solution from the target. Components keep their unmanaged layer on top until it is removed, even after a managed import.',
             ]),
             ...(warnings.length ? [ui.el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-bottom:20px' }, warnings.map(warningAlert))] : []),
         );
@@ -1899,7 +1899,7 @@ function renderCleanupForm() {
     const container = ui.el('div');
     container.append(ui.el('div', { className: 'sd-alert-info' }, [
         ui.el('strong', { textContent: 'Cleanup Mode. ' }),
-        'Deletes the unmanaged solution from the target environment so it no longer shows up after deployment. Your customizations stay active and get overwritten by the next managed import (with "overwrite unmanaged customizations"). Use this after deploying the managed version.',
+        'Deletes the unmanaged solution from the target environment so it no longer shows up after deployment. Without the option below, its components keep their unmanaged layer on top: a managed import with "overwrite unmanaged customizations" copies its values into that layer, but managed imports without that option no longer take effect until the layer is removed. Use this after deploying the managed version.',
     ]));
 
     const targetInput = ui.el('input', { className: 'ppt-input', type: 'text', placeholder: 'https://yourorg.crm.dynamics.com', value: state.targetEnvUrl });
@@ -1934,7 +1934,7 @@ function renderCleanupForm() {
             ui.el('div', { style: 'font-size:13px;font-weight:600', textContent: 'Also remove active customizations (unmanaged layers)' }),
             ui.el('div', {
                 style: 'font-size:12px;color:var(--muted);margin-top:2px',
-                textContent: 'Reverts every component to its managed state — only needed when you want to undo a change that broke something. Leave off for normal post-deployment cleanup.',
+                textContent: 'Removes the unmanaged layer of each component, so the managed solution below takes effect again, as if you had never deployed unmanaged. Deploy the managed release with the same changes first: removing layers before that brings back the previous managed version. Components that only exist unmanaged keep their layer.',
             }),
         ]),
     ]);
