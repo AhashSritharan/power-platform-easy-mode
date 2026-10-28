@@ -104,7 +104,7 @@ on.
 | 🗂️ | [Solution History](#solution-history) | Dynamics 365 & maker portals | Live import progress, failure logs, every past export |
 | ➕ | [Add Existing Components](#add-existing-components) | Dynamics 365 & Power Apps | "Add existing" with a grid you can sort and filter |
 | 🚦 | [Turned-Off Highlighter](#turned-off-highlighter) | Maker portals | Turned-off components stand out in solution views |
-| ⚡ | [Cloud Flow Manager](#cloud-flow-manager) | Dynamics 365 & maker portals | Turn a solution's flows on or off, one at a time or in bulk |
+| ⚡ | [Cloud Flow Manager](#cloud-flow-manager) | Dynamics 365 & maker portals | Turn a solution's flows on or off in bulk, see which flows call which |
 | 📈 | [Flow Run Monitor](#flow-run-monitor) | Dynamics 365 & maker portals | Every run across all flows, filtered, charted and traced to the flow that broke |
 | 🔗 | [Find All References](#find-all-references) | Power Automate | `Shift+F12`: what uses this step or variable |
 | ✅ | [Expression Validator](#expression-validator) | Power Automate | Finds expressions that point at actions that don't exist |
@@ -278,12 +278,19 @@ portal language.
 *Palette: **Open Cloud Flow Manager***
 
 Pick a solution and **Load Flows** to see all its cloud flows with their state.
-**Turn On / Turn Off** one flow, or tick several and use **Turn On Selected**.
-If a flow can't be turned on, you see the reason (e.g. a connection reference
-with no connection).
+**Turn On / Turn Off** one flow, or tick several and use **Turn On Selected**
+(the maker portal turns flows on one at a time). Filter the list by **On**,
+**Off** or **Child Flow Issues**, or search by name. If a flow can't be turned
+on, you see the reason (e.g. a connection reference with no connection).
 
 It also flags flows whose connections are set to *"Provided by run-only
 user"*: those cannot be called as child flows. **Fix** helps you change them.
+
+**🔀 Deps** on a flow shows what calls it and what it calls, up to five levels
+deep: parent flows, child flows and the canvas apps that use it. Switch between
+a diagram and a list, zoom in, and **Export CSV**. For a managed solution, the
+dependencies are read from its unmanaged (DEV) environment, which you pick
+once.
 
 ![Cloud Flow Manager: the six flows of a solution, three on and three off](docs/screenshots/cloud-flow-manager.png)
 
