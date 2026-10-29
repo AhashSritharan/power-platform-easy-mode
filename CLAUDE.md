@@ -48,6 +48,35 @@ wrongly. Before writing code or a mock for an API or page:
   formatted-value annotations, error codes, empty-vs-missing — rather than
   writing what the documentation says should come back.
 
+## Setting up test cases in the developer environment
+
+When a test or a check needs something that isn't in the developer
+environment yet (a flow that fails, a form in a solution, a second user), set
+it up with the tools rather than by hand, and use them:
+
+- **Flows: the Power Automate plugin's FlowAgent MCP.** It creates, edits,
+  runs and inspects flows and their runs. It signs in through the Azure CLI:
+  `az login --tenant <dev tenant domain> --allow-no-subscriptions
+  --use-device-code` as the test user (without `--use-device-code` the
+  Windows account picker can send a work account to the personal-account
+  sign-in, which then says the account doesn't exist). `doctor` checks the
+  setup; `set_current_env` picks the developer environment.
+- **Dataverse and solutions: the `pac` CLI** with a profile for the
+  developer tenant: `pac env fetch` for queries, `pac solution
+  add-solution-component` to put a form or view into a test solution in each
+  environment.
+- **The real extension in a browser: the live tests' saved session**
+  (`playwright/.auth/user.json`); add its cookies the way
+  `tests/e2e/live/fixtures.js` does. Never print it, and never sign in from a
+  script: when it has expired, a person runs the live tests' auth setup.
+- **Navigate by clicking, the way a user does,** before testing a page. A
+  direct link can be a different URL from the one the side panel opens: the
+  form designer is `/e/{env}/s/{solution}/entity/{table}/form/edit/{form}`,
+  which only showed up by clicking a form in a solution.
+
+Only in the developer environments, with made-up data; remove throwaway
+components afterwards, as the deploy tests do.
+
 ## Never commit identifying data
 
 The repository is public. `scripts/sensitive-scan.mjs` runs before every
