@@ -50,12 +50,22 @@ wrongly. Before writing code or a mock for an API or page:
 
 ## Setting up test cases in the developer environment
 
-When a test or a check needs something that isn't in the developer
-environment yet (a flow that fails, a form in a solution, a second user), set
-it up with the tools rather than by hand, and use them:
+When a test, a check or a screenshot needs something that isn't in the
+developer environment yet (a flow that fails, a form in a solution, a canvas
+app, a table with sample data, a second user), set it up with the tools
+rather than by hand, and use them:
 
+- **Anything Power Platform: the Power Platform plugins' skills and MCP
+  servers.** They cover the whole platform, so reach for them first: canvas
+  apps (canvas-apps: canvas-authoring), model-driven apps, forms, views and
+  pages (model-apps: app-builder, genpage), tables, columns and sample data
+  (setup-datamodel, add-sample-data), Power Pages (power-pages), code apps
+  (code-apps), mobile apps (mobile-app) and flows (power-automate). Most of
+  them sign in with `pac` or the Azure CLI as the test user; follow each
+  skill's own setup, and check the sign-in first when one fails.
 - **Flows: the Power Automate plugin's FlowAgent MCP.** It creates, edits,
-  runs and inspects flows and their runs. It signs in through the Azure CLI:
+  runs and inspects flows and their runs. A Button-triggered flow can't be run
+  with inputs through the API: resubmit a past run instead. It signs in through the Azure CLI:
   `az login --tenant <dev tenant domain> --allow-no-subscriptions
   --use-device-code` as the test user (without `--use-device-code` the
   Windows account picker can send a work account to the personal-account
