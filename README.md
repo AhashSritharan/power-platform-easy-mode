@@ -125,10 +125,11 @@ Power Apps title on every page of it.
 ![The DEV badge in the top bar of a Dynamics 365 app](docs/screenshots/environment-badge.png)
 
 **Click the badge** to change the label, rename it, or **Switch** to another
-of your environments in the same place: the same app, record, table, solution
-or flow, when that environment has it. When it does not, the switch opens the
-nearest page that exists there (the table's list, the solution, the flow list)
-rather than a "page not found". Environments with similar addresses
+of your environments in the same place: the same app, record, view, table,
+solution, form or view designer, or flow, when that environment has it; from a
+flow run, the same flow with that environment's runs. When it does not, the
+switch opens the nearest page that exists there (the table's list, the
+solution, the flow list) rather than a "page not found". Environments with similar addresses
 are grouped, and you can rename or reorder the groups. On the maker portals, **Open** takes you to an
 environment's Dynamics 365 app in a new tab.
 

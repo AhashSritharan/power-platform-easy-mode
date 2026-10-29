@@ -26,6 +26,7 @@ const SALES = guid(400), ONLY_HERE_SOLUTION = guid(401), TARGET_SALES = guid(500
 const SYNC = guid(600), NOTIFY = guid(601), ONLY_HERE_FLOW = guid(602), TARGET_NOTIFY = guid(700);
 const APP = guid(100), ONLY_HERE_APP = guid(101), TARGET_APP = guid(200);
 const SHARED_RECORD = guid(300), ONLY_HERE_RECORD = guid(301);
+const MAIN_FORM = guid(1100), ONLY_HERE_FORM = guid(1101), ACTIVE_VIEW = guid(1200), ONLY_HERE_VIEW = guid(1201);
 
 function orgs() {
     const source = new FakeOrg('contoso.crm4.dynamics.com');
@@ -57,6 +58,11 @@ function orgs() {
         { appmoduleid: ONLY_HERE_APP, uniquename: 'contoso_OnlyHere' },
     ]);
     target.table('appmodules', [{ appmoduleid: TARGET_APP, uniquename: 'contoso_Sales' }]);
+    // A solution import keeps a form's or view's id; one made in a single environment has none there.
+    source.table('systemforms', [{ formid: MAIN_FORM, name: 'Account' }, { formid: ONLY_HERE_FORM, name: 'Information' }]);
+    target.table('systemforms', [{ formid: MAIN_FORM, name: 'Account' }, { formid: guid(1102), name: 'Information' }]);
+    source.table('savedqueries', [{ savedqueryid: ACTIVE_VIEW, name: 'Active Accounts' }, { savedqueryid: ONLY_HERE_VIEW, name: 'Key accounts' }]);
+    target.table('savedqueries', [{ savedqueryid: ACTIVE_VIEW, name: 'Active Accounts' }]);
     source.table('webresourceset', [{ webresourceid: guid(800), name: 'contoso_/map.html' }]);
     target.table('webresourceset', [{ webresourceid: guid(900), name: 'contoso_/shared.html' }]);
     return { source, target };
@@ -210,6 +216,20 @@ test('the model-driven app designer opens the same app in the same solution', as
     assert.equal(await switched(designer(SOURCE_ENV, ONLY_HERE_SOLUTION, APP)), `${TO_POWERAPPS}/solutions`);
 });
 
+// The URL shapes clicking a form or a view in a solution opens (live, 2026-10-29).
+test('the form designer opens the same form, found by its id, in the same solution', async () => {
+    const form = (env, solution, id) => `https://make.powerapps.com/e/${env}/s/${solution}/entity/account/form/edit/${id}?source=powerappsportal`;
+    assert.equal(await switched(form(SOURCE_ENV, SALES, MAIN_FORM)), form(TARGET_ENV, TARGET_SALES, MAIN_FORM));
+    // Form names repeat across tables, so a form the target lacks is never matched by name.
+    assert.equal(await switched(form(SOURCE_ENV, SALES, ONLY_HERE_FORM)), `${TO_POWERAPPS}/solutions/${TARGET_SALES}`);
+});
+
+test('the view designer opens the same view, found by its id, in the same solution', async () => {
+    const view = (env, solution, id) => `https://make.powerapps.com/e/${env}/s/${solution}/entity/account/view/${id}`;
+    assert.equal(await switched(view(SOURCE_ENV, SALES, ACTIVE_VIEW)), view(TARGET_ENV, TARGET_SALES, ACTIVE_VIEW));
+    assert.equal(await switched(view(SOURCE_ENV, SALES, ONLY_HERE_VIEW)), `${TO_POWERAPPS}/solutions/${TARGET_SALES}`);
+});
+
 // ── make.powerautomate.com ───────────────────────────────────────────────
 
 test('a flow is found by its id, or by its name; a missing one opens the flow list', async () => {
@@ -218,8 +238,14 @@ test('a flow is found by its id, or by its name; a missing one opens the flow li
     assert.equal(await switched(`${POWERAUTOMATE}/flows/${ONLY_HERE_FLOW}/details`), `${TO_POWERAUTOMATE}/flows`);
 });
 
-test('a flow run never exists in another environment: the switch opens the flow', async () => {
-    assert.equal(await switched(`${POWERAUTOMATE}/flows/${SYNC}/runs/${guid(42)}`), `${TO_POWERAUTOMATE}/flows/${SYNC}`);
+test('a flow run never exists in another environment: the switch opens the flow\'s details and its runs', async () => {
+    assert.equal(await switched(`${POWERAUTOMATE}/flows/${SYNC}/runs/${guid(42)}`), `${TO_POWERAUTOMATE}/flows/${SYNC}/details`);
+    // A live run's name is no GUID.
+    const RUN = '08584083461464206970916428111CU15';
+    assert.equal(await switched(`${POWERAUTOMATE}/flows/${SYNC}/runs/${RUN}`), `${TO_POWERAUTOMATE}/flows/${SYNC}/details`);
+    assert.equal(
+        await switched(`${POWERAUTOMATE}/solutions/${SALES}/flows/${NOTIFY}/runs/${RUN}`),
+        `${TO_POWERAUTOMATE}/solutions/${TARGET_SALES}/flows/${TARGET_NOTIFY}/details`);
 });
 
 test('solution flows in Power Automate resolve the solution as well', async () => {

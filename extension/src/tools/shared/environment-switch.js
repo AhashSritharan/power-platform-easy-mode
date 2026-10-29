@@ -39,8 +39,13 @@ const SEGMENTS = {
     connectionreferences: { set: 'connectionreferences', id: 'connectionreferenceid', name: 'connectionreferencelogicalname' },
     'environment variables': { set: 'environmentvariabledefinitions', id: 'environmentvariabledefinitionid', name: 'schemaname' },
 };
-// The model-driven app designer: /e/{env}/s/{solution}/app/edit/{app}.
+// The designers under /e/{env}/s/{solution}/: the model-driven app's (app/edit/{app}),
+// a form's (entity/{table}/form/edit/{form}) and a view's (entity/{table}/view/{view}).
+// Forms and views have no name of their own to find them by: "Information" is a form
+// of several tables, so only an id a solution import kept is followed.
 const DESIGNER_SEGMENTS = { s: SOLUTIONS, edit: APP_MODULES };
+const FORM_DESIGNER_SEGMENTS = { s: SOLUTIONS, edit: { set: 'systemforms', id: 'formid' } };
+const VIEW_DESIGNER_SEGMENTS = { s: SOLUTIONS, view: { set: 'savedqueries', id: 'savedqueryid' } };
 
 // Where a maker-portal link goes when its first component is missing.
 const LISTS = { solutions: 'solutions', entities: 'tables', flows: 'flows' };
@@ -77,9 +82,10 @@ export async function switchUrl(href, { targetEnvId, sourceHost, targetHost, get
         if (designer) {
             const rest = (designer[1] ?? '').split('/').filter(Boolean);
             if (!targetHost || rest[0] !== 's') return `${url.origin}/e/${targetEnvId}${designer[1] ?? ''}${url.search}${url.hash}`;
-            const walked = await walk(rest, DESIGNER_SEGMENTS, find);
+            const kinds = rest[2] !== 'entity' ? DESIGNER_SEGMENTS : rest[4] === 'form' ? FORM_DESIGNER_SEGMENTS : VIEW_DESIGNER_SEGMENTS;
+            const walked = await walk(rest, kinds, find);
             if (walked.complete) return `${url.origin}/e/${targetEnvId}/${walked.segments.join('/')}${url.search}${url.hash}`;
-            // The designer has no page of its own for a missing app: the solution it was in.
+            // The designer has no page of its own for a missing app, form or view: the solution it was in.
             const solution = walked.segments[1];
             return `${url.origin}/environments/${targetEnvId}/solutions${solution ? `/${solution}` : ''}`;
         }
@@ -103,6 +109,7 @@ export async function switchUrl(href, { targetEnvId, sourceHost, targetHost, get
 async function findComponent(component, id, { read, sourceHost, targetHost }) {
     const byId = (host, field) => read(host, `${component.set}(${id})?$select=${field}`);
     if (await byId(targetHost, component.id)) return id;
+    if (!component.name) return null;
     const name = (await byId(sourceHost, component.name))?.[component.name];
     if (!name) return null;
     if (component.metadata) {
@@ -120,6 +127,10 @@ async function walk(segments, kinds, find) {
     const out = [];
     let lastId = 0;
     for (let i = 0; i < segments.length; i++) {
+        // A flow run never exists in another environment, and a live run's name is
+        // no GUID ("08584083461464206970916428111CU15"): the link opens the flow's
+        // details, where its own runs are listed (its bare URL is the designer).
+        if (/^runs$/i.test(segments[i])) return { segments: [...out.slice(0, lastId), 'details'], complete: false };
         const next = segments[i + 1]?.match(GUID)?.[1];
         if (!next) {
             out.push(segments[i]);
