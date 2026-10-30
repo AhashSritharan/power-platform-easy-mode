@@ -159,7 +159,7 @@ function askToSignIn(hosts, purpose) {
             render: (body) => body.append(
                 ui.el('div', {
                     className: 'ppt-note',
-                    textContent: `This browser has no Dynamics 365 session for this environment yet, which the Toolbox needs so ${purpose ?? 'it can read it'}. `
+                    textContent: `This browser has no Dynamics 365 session for this environment yet, which Easy Mode needs so ${purpose ?? 'it can read it'}. `
                         + 'Signing in opens it briefly in a background tab and closes it again.',
                 }),
                 ui.el('div', { className: 'ppt-note', style: 'margin-top:8px', textContent: hosts.join(', ') }),

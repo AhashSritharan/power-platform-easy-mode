@@ -12,7 +12,7 @@ const listeners = new Set();
 let announced = false;
 
 export const RELOAD_HINT =
-    'Power Platform Toolbox was reloaded or updated — reload the page to keep using it.';
+    'Power Platform Easy Mode was reloaded or updated — reload the page to keep using it.';
 
 /** False once this content script has been orphaned by an extension reload. */
 export function isExtensionAlive() {
@@ -39,7 +39,7 @@ export function onExtensionInvalidated(cb) {
 export function noteInvalidated() {
     if (announced) return;
     announced = true;
-    console.warn(`[Power Platform Toolbox] ${RELOAD_HINT}`);
+    console.warn(`[Power Platform Easy Mode] ${RELOAD_HINT}`);
     for (const cb of listeners) {
         try { cb(); } catch { /* a broken listener must not mask the shutdown */ }
     }

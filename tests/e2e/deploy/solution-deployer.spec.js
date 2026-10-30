@@ -14,7 +14,7 @@ test.skip(!env.targetUrl, 'TARGET_URL is not configured');
 test.describe.configure({ mode: 'serial' });
 
 const unique = `pptE2E${Date.now().toString(36)}`;
-const CONTENT = Buffer.from(`// Power Platform Toolbox deploy test ${unique}\n`).toString('base64');
+const CONTENT = Buffer.from(`// Power Platform Easy Mode deploy test ${unique}\n`).toString('base64');
 const solution = { uniquename: unique, friendlyname: `PPT E2E ${unique}` };
 let webResourceName;
 

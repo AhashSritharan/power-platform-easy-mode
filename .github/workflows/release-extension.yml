@@ -36,16 +36,16 @@ jobs:
       - name: Build extension zip
         run: |
           set -euo pipefail
-          (cd extension && zip -r ../power-platform-toolbox-extension.zip .)
+          (cd extension && zip -r ../power-platform-easy-mode-extension.zip .)
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: extension-zip
-          path: power-platform-toolbox-extension.zip
+          path: power-platform-easy-mode-extension.zip
 
       - name: Attach to GitHub release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: power-platform-toolbox-extension.zip
+          files: power-platform-easy-mode-extension.zip

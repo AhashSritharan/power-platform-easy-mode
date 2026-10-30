@@ -1,4 +1,4 @@
-# Chrome Web Store listing — Power Platform Toolbox
+# Chrome Web Store listing — Power Platform Easy Mode
 
 **Live:** https://chromewebstore.google.com/detail/power-platform-toolbox/jdpbkpcoffofnpbeokkhfgfkjhjdbbeo
 (2.0.0, October 2026). The README's Install section links here.
@@ -8,7 +8,7 @@ when publishing. One-time $5 registration fee applies to new developer accounts.
 
 ## Basics
 
-- **Name:** Power Platform Toolbox
+- **Name:** Power Platform Easy Mode
 - **Category:** Developer Tools
 - **Language:** English
 
@@ -53,10 +53,12 @@ ENVIRONMENTS
 OPTIONAL
 • Jira Clockify Timer — start Clockify timers from Jira issues
 • Clockify → Dynamics 365 Sync — import time entries
+
+Independent project, not affiliated with or endorsed by Microsoft.
 ```
 
-- **Privacy policy URL:** https://github.com/AhashSritharan/power-platform-toolbox/blob/main/PRIVACY.md
-- **Homepage URL:** https://github.com/AhashSritharan/power-platform-toolbox
+- **Privacy policy URL:** https://github.com/AhashSritharan/power-platform-easy-mode/blob/main/PRIVACY.md
+- **Homepage URL:** https://github.com/AhashSritharan/power-platform-easy-mode
 
 ## Privacy tab answers
 
@@ -104,7 +106,7 @@ role, no MFA, removed after approval) and add its sign-in here.
 **Additional instructions:**
 
 ```text
-Requires a Microsoft Dynamics 365 / Power Platform account. A free one: https://aka.ms/PowerAppsDevPlan (Power Apps Developer Plan, includes an environment). Open the environment's Dynamics 365 app or https://make.powerapps.com, then press Alt+Shift+P (or click the 🧰 tab on the right edge) to open the toolbox, e.g. "Browse Records". Setup opens after install. Jira and Clockify tools are optional, off by default, and not needed for review.
+Requires a Microsoft Dynamics 365 / Power Platform account. A free one: https://aka.ms/PowerAppsDevPlan (Power Apps Developer Plan, includes an environment). Open the environment's Dynamics 365 app or https://make.powerapps.com, then press Alt+Shift+P (or click the purple switch tab on the right edge) to open Easy Mode, e.g. "Browse Records". Setup opens after install. Jira and Clockify tools are optional, off by default, and not needed for review.
 ```
 
 ## Images
@@ -125,7 +127,7 @@ placeholders, and are not kept in this repository.
 1. Raise `version` in `extension/manifest.json` — the store rejects a version
    it has already seen (2.0.0 is taken).
 2. Publish a GitHub release; the release workflow reruns the end-to-end tests
-   and attaches `power-platform-toolbox-extension.zip`.
+   and attaches `power-platform-easy-mode-extension.zip`.
 3. Developer dashboard → the item → **Package** → upload that zip.
 4. Update the listing and privacy tabs from this document if anything changed,
    and submit for review.

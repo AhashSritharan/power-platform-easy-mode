@@ -881,7 +881,7 @@ async function applyChipSetting() {
     if (enabled) {
         showCaretChip({
             label: '🧬',
-            title: 'Insert a Dataverse field (Power Platform Toolbox)',
+            title: 'Insert a Dataverse field (Power Platform Easy Mode)',
             when: onDesignerPage,
             dock: tokenPickerHeader,
             onActivate: openFieldPicker,

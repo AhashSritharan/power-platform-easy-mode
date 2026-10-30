@@ -23,7 +23,7 @@ async function loadTools() {
             const module = await import(chrome.runtime.getURL(tool.file));
             await module.default.init({ store: createStore(tool.id), tool });
         } catch (e) {
-            console.error(`[Power Platform Toolbox] tool "${tool.id}" failed:`, e);
+            console.error(`[Power Platform Easy Mode] tool "${tool.id}" failed:`, e);
         }
     }
 }
@@ -85,7 +85,7 @@ onExtensionInvalidated(() => toast(RELOAD_HINT, 8000));
 // The portal tab setup opened to find the user's environments: pass the list on.
 if (location.hostname === 'make.powerapps.com' && new URLSearchParams(location.search).has(DISCOVERY_PARAM)) {
     discoveredEnvironments().then((response) => chrome.runtime.sendMessage({ type: 'environments-discovered', response }))
-        .catch((e) => console.error('[Power Platform Toolbox] environment discovery failed:', e));
+        .catch((e) => console.error('[Power Platform Easy Mode] environment discovery failed:', e));
 }
 
 // On Jira the only tool puts its own timer button on the page, so a launcher

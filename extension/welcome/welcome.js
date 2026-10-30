@@ -73,7 +73,7 @@ async function move(action) {
         try {
             await step.leave?.();
         } catch (e) {
-            console.error('[Power Platform Toolbox] setup could not save:', e);
+            console.error('[Power Platform Easy Mode] setup could not save:', e);
             return;
         }
         await closeTab();
@@ -83,7 +83,7 @@ async function move(action) {
         try {
             await step.leave?.();
         } catch (e) {
-            console.error('[Power Platform Toolbox] setup could not save:', e);
+            console.error('[Power Platform Easy Mode] setup could not save:', e);
             return;
         }
     }

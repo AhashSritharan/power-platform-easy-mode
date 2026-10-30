@@ -1,4 +1,4 @@
-# Power Platform Toolbox — working rules
+# Power Platform Easy Mode — working rules
 
 A Chrome/Edge MV3 extension with no build step: what is in `extension/` is
 what ships. README.md is the user guide; CONTRIBUTING.md describes the

@@ -201,7 +201,7 @@ export function insertAtCaret(text) {
     try {
         return tracked.kind === 'field' ? insertIntoField(text) : insertIntoEditable(text);
     } catch (e) {
-        console.warn('[Power Platform Toolbox] caret insert failed:', e);
+        console.warn('[Power Platform Easy Mode] caret insert failed:', e);
         return false;
     }
 }

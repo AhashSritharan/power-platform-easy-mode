@@ -11,7 +11,7 @@
 
 export const SOLUTION = 'ContosoSales';
 const PREFIX = 'contoso';
-const DESCRIPTION = 'Demo content for the Power Platform Toolbox README screenshots. Safe to delete.';
+const DESCRIPTION = 'Demo content for the Power Platform Easy Mode README screenshots. Safe to delete.';
 
 const SCHEMA = 'https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#';
 const label = (text) => ({ LocalizedLabels: [{ '@odata.type': 'Microsoft.Dynamics.CRM.LocalizedLabel', Label: text, LanguageCode: 1033 }] });

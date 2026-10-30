@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "Power Platform Toolbox",
+    "name": "Power Platform Easy Mode",
     "version": "2.0.0",
     "description": "Developer tools for Dynamics 365, Power Platform, Jira & Clockify. Runs 100% locally — collects no data whatsoever.",
     "minimum_chrome_version": "111",
@@ -57,12 +57,12 @@
             "suggested_key": {
                 "default": "Alt+Shift+P"
             },
-            "description": "Open the Power Platform Toolbox command palette"
+            "description": "Open the Power Platform Easy Mode command palette"
         }
     },
     "action": {
         "default_popup": "popup/popup.html",
-        "default_title": "Power Platform Toolbox",
+        "default_title": "Power Platform Easy Mode",
         "default_icon": {
             "16": "icons/icon16.png",
             "32": "icons/icon32.png",

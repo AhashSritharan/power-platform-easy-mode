@@ -1,4 +1,4 @@
-// Service worker for Power Platform Toolbox.
+// Service worker for Power Platform Easy Mode.
 //
 // Responsibilities:
 //   1. Proxy cross-origin requests via fetch, restricted to a fixed allowlist
