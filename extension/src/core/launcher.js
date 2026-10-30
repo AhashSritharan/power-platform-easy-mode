@@ -1,9 +1,9 @@
 // Floating launcher: a small tab docked to the right edge of the page that
-// opens the command palette, so the toolbox is one click away without going
+// opens the command palette, so Easy Mode is one click away without going
 // through the browser's extension menu or knowing the shortcut.
 //
-// It stays out of the way: just the 🧰 icon, half transparent, until hovered,
-// below every toolbox panel and dialog, draggable up and down to
+// It stays out of the way: just the switch icon, half transparent, until hovered,
+// below every Easy Mode panel and dialog, draggable up and down to
 // wherever the page has nothing under it (the spot is remembered), and it can
 // be hidden from its own × or from the options page.
 
@@ -27,7 +27,15 @@ const STYLE = `
     .ppt-launcher:hover, .ppt-launcher:focus-visible, .ppt-launcher.dragging { opacity: 1; }
     .ppt-launcher:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     .ppt-launcher.dragging { cursor: grabbing; }
-    .ppt-launcher .icon { font-size: 16px; line-height: 1; }
+    /* The product icon in miniature: a purple switch, flipped on (ahash.dev brand accent). */
+    .ppt-launcher .icon {
+        position: relative; flex: none; width: 22px; height: 12px;
+        border-radius: 6px; background: #9b29ff;
+    }
+    .ppt-launcher .icon::after {
+        content: ''; position: absolute; top: 2px; right: 2px;
+        width: 8px; height: 8px; border-radius: 50%; background: #fff;
+    }
     .ppt-launcher .label, .ppt-launcher .hide {
         max-width: 0; opacity: 0; overflow: hidden; white-space: nowrap;
         transition: max-width 0.18s ease, opacity 0.18s ease, margin 0.18s ease;
@@ -57,10 +65,10 @@ export async function showLauncher(onOpen) {
     addStyle('launcher', STYLE);
     const button = el('div', {
         className: 'ppt ppt-launcher', role: 'button', tabIndex: 0,
-        title: 'Power Platform Toolbox (Alt+Shift+P) — drag to move',
+        title: 'Power Platform Easy Mode (Alt+Shift+P) — drag to move',
     }, [
-        el('span', { className: 'icon', textContent: '🧰' }),
-        el('span', { className: 'label', textContent: 'Toolbox' }),
+        el('span', { className: 'icon' }),
+        el('span', { className: 'label', textContent: 'Easy Mode' }),
     ]);
     const hide = el('button', { className: 'hide', textContent: '✕', title: 'Hide the launcher (turn it back on in the options)' });
     button.appendChild(hide);

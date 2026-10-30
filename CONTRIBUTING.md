@@ -1,9 +1,9 @@
 # Contributing
 
-Thanks for wanting to improve Power Platform Toolbox. This page is for people
+Thanks for wanting to improve Power Platform Easy Mode. This page is for people
 working on the code; the [README](README.md) is the user guide.
 
-Bugs and ideas: [open an issue](https://github.com/AhashSritharan/power-platform-toolbox/issues).
+Bugs and ideas: [open an issue](https://github.com/AhashSritharan/power-platform-easy-mode/issues).
 Pull requests are welcome. Every change is test-driven; the rules are in
 [CLAUDE.md](CLAUDE.md), and the short version is below.
 
@@ -38,7 +38,7 @@ extension/
       ui.js                 shadow-DOM UI kit: modal, toast, palette, inputs
       caret.js              remembers the page field the user was in; inserts at their cursor
       commands.js           command registry (popup + palette)
-      launcher.js           floating 🧰 tab on the page that opens the palette
+      launcher.js           floating switch tab on the page that opens the palette
       agent.js              client for the page agent (network interception)
     agent/
       page-agent.js         MAIN-world script: on-demand fetch/XHR interception

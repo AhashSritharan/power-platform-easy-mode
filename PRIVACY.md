@@ -1,10 +1,10 @@
-# Privacy Policy — Power Platform Toolbox
+# Privacy Policy — Power Platform Easy Mode
 
 _Last updated: 2026-07-06_
 
 ## The short version
 
-**Power Platform Toolbox collects no data. Period.**
+**Power Platform Easy Mode collects no data. Period.**
 
 No analytics, no telemetry, no crash reporting, no accounts, no cookies of its
 own, no fingerprinting. There is no server behind this extension — everything
@@ -69,11 +69,11 @@ and no data is shared with anyone (there is nothing to share).
 ## Open source
 
 The complete source code is available at
-<https://github.com/AhashSritharan/power-platform-toolbox> — you can
+<https://github.com/AhashSritharan/power-platform-easy-mode> — you can
 audit every request the extension is capable of making.
 
 ## Changes & contact
 
 If this policy ever changes, the change will be visible in the repository's
 history. Questions or concerns: please
-[open an issue](https://github.com/AhashSritharan/power-platform-toolbox/issues).
+[open an issue](https://github.com/AhashSritharan/power-platform-easy-mode/issues).

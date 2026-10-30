@@ -26,7 +26,7 @@ function prepareExtension() {
 
 // Console errors that are the extension's: logged from its own files, or
 // carrying one of the "[Tool Name]" prefixes its modules log with.
-const PREFIXES = ['Power Platform Toolbox', 'Clockify Timer', ...TOOLS.map((t) => t.name)];
+const PREFIXES = ['Power Platform Easy Mode', 'Clockify Timer', ...TOOLS.map((t) => t.name)];
 const isExtensionError = (msg) => msg.type() === 'error'
     && (msg.location().url.startsWith('chrome-extension://') || PREFIXES.some((p) => msg.text().startsWith(`[${p}]`)));
 

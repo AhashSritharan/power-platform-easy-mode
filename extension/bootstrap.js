@@ -4,6 +4,6 @@
     try {
         await import(chrome.runtime.getURL('src/main.js'));
     } catch (e) {
-        console.error('[Power Platform Toolbox] failed to start:', e);
+        console.error('[Power Platform Easy Mode] failed to start:', e);
     }
 })();

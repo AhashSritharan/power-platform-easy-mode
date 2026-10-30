@@ -534,7 +534,7 @@ export function confirmDialog(message, { title = 'Confirm', okLabel = 'OK' } = {
  */
 export function openPalette({ sections }) {
     modal({
-        title: '🧰 Power Platform Toolbox',
+        title: '🎮 Power Platform Easy Mode',
         width: '760px',
         render: (body, close) => {
             const list = el('div', { className: 'ppt-palette-list' });

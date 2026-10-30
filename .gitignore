@@ -4,7 +4,7 @@
 
 # Release bundles
 userscripts.zip
-power-platform-toolbox-extension.zip
+power-platform-easy-mode-extension.zip
 
 # Tool output full of org data (flow backups, browser snapshots) — never commit
 .flowagent/

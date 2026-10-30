@@ -990,7 +990,7 @@ function watchPortalPanel() {
         const surf = ui.surface(header.parentElement);
         const button = ui.el('button', {
             className: 'ppt-btn', style: 'margin-left:12px;padding:4px 10px;font-size:12px;white-space:nowrap',
-            textContent: '🔍 Filter & sort in Toolbox',
+            textContent: '🔍 Filter & sort in Easy Mode',
             title: 'Open this list in Add Existing Components — sort and filter on any column',
         });
         button.addEventListener('click', () => handOff(dialog, header.textContent.trim()));

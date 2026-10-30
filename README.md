@@ -1,4 +1,4 @@
-# Power Platform Toolbox
+# Power Platform Easy Mode
 
 **18 tools for Dynamics 365 and the Power Platform, right inside the pages you
 already work in.** Deploy solutions, browse and edit records, debug flows and
@@ -13,7 +13,7 @@ always see which environment you are in, all from one command palette.
 
 **Who it is for:** makers, consultants, admins and developers working in
 Dynamics 365 model-driven apps, Power Apps and Power Automate. Everything it
-does, you are already allowed to do. The toolbox just makes it quicker.
+does, you are already allowed to do. Easy Mode just makes it quicker.
 
 - [Install](#install)
 - [Getting started](#getting-started)
@@ -31,13 +31,13 @@ does, you are already allowed to do. The toolbox just makes it quicker.
   on some versions).
 
 Then pin it to the toolbar: click the puzzle-piece icon and the pin next to
-*Power Platform Toolbox*. Updates install automatically.
+*Power Platform Easy Mode*. Updates install automatically.
 
 <details>
 <summary>Can't use the store? Install it by hand</summary>
 
-1. Download **`power-platform-toolbox-extension.zip`** from the
-   [latest release](https://github.com/AhashSritharan/power-platform-toolbox/releases/latest)
+1. Download **`power-platform-easy-mode-extension.zip`** from the
+   [latest release](https://github.com/AhashSritharan/power-platform-easy-mode/releases/latest)
    and unzip it into a folder you will keep.
 2. Open `chrome://extensions` (or `edge://extensions`) and turn on
    **Developer mode**.
@@ -60,7 +60,7 @@ on. The Jira and Clockify tools are off until you need them.
 ![Setup, step 1: a switch for each tool](docs/screenshots/setup-tools.png)
 
 **A label for each environment.** Click **Find my environments**. The
-toolbox opens the Power Apps maker portal in a background tab, reads the list
+Easy Mode opens the Power Apps maker portal in a background tab, reads the list
 of environments you have access to, and closes the tab again. It suggests
 DEV / TEST / PROD from each environment's type, and you can change any
 of them. These labels drive the coloured badge on every page and the
@@ -78,11 +78,11 @@ options page and from the palette (**Run setup**).
 
 Go to any Dynamics 365 app (`*.dynamics.com`), [make.powerapps.com](https://make.powerapps.com)
 or [make.powerautomate.com](https://make.powerautomate.com). There are three
-ways to open the toolbox:
+ways to open Easy Mode:
 
 - Press **`Alt+Shift+P`** for the command palette. Start typing to filter
   it, e.g. "browse".
-- Click the small **🧰 tab** on the right edge of the page. Drag it up or down
+- Click the small **switch tab** on the right edge of the page. Drag it up or down
   if it is in the way.
 - Click the **toolbar icon**. It lists the same commands for the page you
   are on.
@@ -242,7 +242,7 @@ after the managed release with the same changes is in; before, it brings back
 the previous managed version.
 
 You must be signed in to the target environment in another tab. The
-toolbox uses your existing sign-in and never asks for a password.
+Easy Mode uses your existing sign-in and never asks for a password.
 
 #### Solution History
 
@@ -259,7 +259,7 @@ toolbox uses your existing sign-in and never asks for a password.
 #### Add Existing Components
 
 *Palette: **Add Existing Components (filterable)**, or the **Filter & sort in
-Toolbox** button in the maker portal's own "Add existing" panel*
+Easy Mode** button in the maker portal's own "Add existing" panel*
 
 The maker portal's "Add existing" panel, rebuilt as a real grid: pick the
 solution and component type, sort on any column (several at once), filter any
@@ -396,7 +396,7 @@ and task for each entry, and durations are rounded the way you set up.
 Right-click the toolbar icon → **Options**:
 
 - switch any tool on or off, or all of them at once;
-- turn the 🧰 tab off (the palette is still on `Alt+Shift+P`). You can also hover
+- turn the switch tab off (the palette is still on `Alt+Shift+P`). You can also hover
   the tab and click × to hide it;
 - **Run setup again**, whole or one step at a time.
 
@@ -405,14 +405,14 @@ To change the palette shortcut, open `chrome://extensions/shortcuts` (or
 
 ## Questions and troubleshooting
 
-**I don't see the 🧰 tab or the badge.**
+**I don't see the switch tab or the badge.**
 Reload the page once after installing, since tools load when a page opens.
 Check that the tool is switched on in Options. The tab only appears on Dynamics
 365 and the Power Platform maker portals.
 
 **A tool asks me to sign in, or opens a tab for a moment.**
 The maker portals sign you in differently from Dynamics 365. When the
-toolbox needs an environment's data on the portal and your browser has no
+Easy Mode needs an environment's data on the portal and your browser has no
 Dynamics 365 session for it yet, it opens that environment in a background tab
 so single sign-on can create one, then closes it. If it can't find the
 environment's address, it asks you for it once.
@@ -423,7 +423,7 @@ something in Dynamics 365 yourself (read audit history, import a solution), the
 tool can't either, and it tells you why.
 
 **Is my password or token stored?**
-No. The toolbox never sees passwords or tokens. Requests use the session your
+No. Easy Mode never sees passwords or tokens. Requests use the session your
 browser already has, the same way the page itself does. It stores only your
 settings, such as which tools are on, your environment labels and an
 optional Clockify key, locally in your browser.
@@ -434,7 +434,7 @@ optional tools, `*.atlassian.net` and `api.clockify.me`. The full list and what
 each is used for are in [PRIVACY.md](PRIVACY.md).
 
 **Something is broken or missing.**
-[Open an issue](https://github.com/AhashSritharan/power-platform-toolbox/issues).
+[Open an issue](https://github.com/AhashSritharan/power-platform-easy-mode/issues).
 Say which tool, on which page, and what you expected. Please leave out
 environment names, URLs and record data. Microsoft changes the maker portals
 often, and an issue is the fastest way to get a tool working again.
@@ -449,3 +449,7 @@ how the extension is built, how to run it from source and how the tests work.
 [MIT](LICENSE)
 
 Tool icons are from [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) by Microsoft, MIT licensed — see [extension/src/core/icons.LICENSE](extension/src/core/icons.LICENSE).
+
+Power Platform Easy Mode is an independent project and is not affiliated with or
+endorsed by Microsoft. Microsoft, Dynamics 365 and Power Platform are trademarks
+of the Microsoft group of companies.

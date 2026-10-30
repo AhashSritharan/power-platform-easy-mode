@@ -1,5 +1,5 @@
 {
-    "name": "power-platform-toolbox",
+    "name": "power-platform-easy-mode",
     "private": true,
     "type": "module",
     "description": "Dev tooling only \u2014 the extension itself has no build step and no dependencies.",
