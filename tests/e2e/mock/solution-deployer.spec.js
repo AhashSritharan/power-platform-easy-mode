@@ -211,6 +211,8 @@ test.describe('Solution Deployer — cleanup', () => {
             { solutioncomponentid: guid(73), _solutionid_value: guid(12), componenttype: 29, objectid: guid(74) },
             { solutioncomponentid: guid(75), _solutionid_value: guid(12), componenttype: 9999, objectid: guid(76) },
         ]);
+        targetOrg.table('msdyn_solutioncomponentsummaries', []);
+        targetOrg.table('msdyn_componentlayers', []);
         targetOrg.on('POST', '/RemoveActiveCustomization', () => ({ status: 204 }));
         const panel = await openDeployer(page, org);
         await cleanup(page, panel, targetOrg, { removeLayers: true });
@@ -220,6 +222,49 @@ test.describe('Solution Deployer — cleanup', () => {
             { LogicalName: 'webresource', Id: guid(72) },
             { LogicalName: 'workflow', Id: guid(74) },
         ]);
+    });
+
+    test('says, per component, what removing the unmanaged layers would lose before anything is removed', async ({ page, org, targetOrg }) => {
+        // Layer rows shaped like a live org's msdyn_componentlayers (trimmed to the attributes that matter).
+        const entity = (attrs) => JSON.stringify({ LogicalName: 'workflow', Attributes: Object.entries(attrs).map(([Key, Value]) => ({ Key, Value })) });
+        const RENAMED = guid(81), COVERED = guid(82), DESCRIBED = guid(83), ONLY_HERE = guid(84);
+        org.table('solutions', [{ ...SOLUTION }]);
+        targetOrg.table('solutions', [{ ...SOLUTION, solutionid: guid(12) }]);
+        targetOrg.table('solutioncomponents', [RENAMED, COVERED, DESCRIBED, ONLY_HERE].map((id, i) => (
+            { solutioncomponentid: guid(85 + i), _solutionid_value: guid(12), componenttype: 29, objectid: id })));
+        const names = { [RENAMED]: 'Lead | Score new lead', [COVERED]: 'Order | Notify warehouse', [DESCRIBED]: 'Case | Route to queue', [ONLY_HERE]: 'Scratch flow' };
+        targetOrg.table('msdyn_solutioncomponentsummaries', Object.entries(names).map(([id, name]) => (
+            { msdyn_solutionid: guid(12), msdyn_objectid: id, msdyn_displayname: name, msdyn_name: name, msdyn_componenttypename: 'Process' })));
+        const layer = (id, order, solution, changes, state = changes) => ({
+            msdyn_componentid: id, msdyn_solutioncomponentname: 'Workflow', msdyn_order: order, msdyn_solutionname: solution,
+            msdyn_changes: entity(changes), msdyn_componentjson: entity(state),
+        });
+        targetOrg.table('msdyn_componentlayers', [
+            layer(RENAMED, 2, 'Active', { workflowidunique: 'a', name: 'Lead | Score new lead (TEST edit)' }),
+            layer(RENAMED, 1, 'Release', { name: 'Lead | Score new lead', workflowidunique: 'b' }),
+            layer(COVERED, 2, 'Active', { workflowidunique: 'c', name: 'Order | Notify warehouse' }),
+            layer(COVERED, 1, 'Release', { name: 'Order | Notify warehouse' }),
+            layer(DESCRIBED, 2, 'Active', { workflowidunique: 'd', description: 'Edited in TEST' }),
+            layer(DESCRIBED, 1, 'Release', { name: 'Case | Route to queue' }),
+            layer(ONLY_HERE, 1, 'Active', { name: 'Scratch flow' }),
+        ]);
+        const panel = await openDeployer(page, org);
+        await panel.getByRole('button', { name: '🧹 Cleanup' }).click();
+        await setTarget(panel, targetOrg);
+        const nameInput = panel.getByPlaceholder('e.g. QuickDeploy_20260512');
+        await nameInput.fill('Core');
+        await nameInput.press('Tab');
+        await panel.getByText('Also remove active customizations (unmanaged layers)').click();
+        await panel.locator('.sd-footer').getByRole('button', { name: '🧹 Run Cleanup' }).click();
+
+        const modal = page.locator('.sd-modal');
+        await expect(modal).toContainText('What removing the unmanaged layers loses');
+        await expect(modal).toContainText('🔁 Lead | Score new lead (Process) — reverts to Release: name "Lead | Score new lead (TEST edit)" → "Lead | Score new lead"');
+        await expect(modal).toContainText('❔ Case | Route to queue (Process) — changes description unmanaged');
+        await expect(modal).toContainText('✅ 1 component(s): the managed layer below already has these changes — nothing is lost.');
+        await expect(modal).toContainText('1 component(s) have no unmanaged layer over a managed one');
+        await modal.getByRole('button', { name: 'Cancel' }).click();
+        expect(targetOrg.calls('POST', '/RemoveActiveCustomization'), 'nothing is removed by looking').toHaveLength(0);
     });
 });
 
@@ -398,12 +443,19 @@ test.describe('Solution Deployer — managed hotfix', () => {
                 objectid: id, componenttype: 29, solutionid: { solutionid: s.solutionid, uniquename: s.uniquename, ismanaged: s.ismanaged },
             }))) };
         });
-        targetOrg.on('POST', '/UninstallSolutionAsync', (req) => {
-            if (req.body.SolutionUniqueName !== 'Core') return undefined;
-            targetOrg.tables.solutions.splice(targetOrg.tables.solutions.findIndex((s) => s.uniquename === 'Core'), 1);
-            return { AsyncOperationId: guid(98) };
-        });
-        targetOrg.table('asyncoperations', [{ asyncoperationid: guid(98), statecode: 3, statuscode: 30 }]);
+        // No answer for UninstallSolutionAsync or DELETE solutions(…): the deployer never
+        // uninstalls — that is left to the maker portal — and the fixture fails any call.
+    }
+
+    /** Clicks the hand-off and returns the maker-portal tab it opened. */
+    async function openInPortal(modal, extensionContext) {
+        const [portal] = await Promise.all([
+            extensionContext.waitForEvent('page'),
+            modal.getByRole('button', { name: '🧭 Open Solutions in the maker portal' }).click(),
+        ]);
+        const url = portal.url();
+        await portal.close();
+        return url;
     }
 
     async function startCleanup(page, panel, targetOrg) {
@@ -416,21 +468,20 @@ test.describe('Solution Deployer — managed hotfix', () => {
         return page.locator('.sd-modal');
     }
 
-    test('cleans up a managed hotfix by uninstalling it: its components fall back to the release', async ({ page, org, targetOrg }) => {
+    test('never uninstalls a managed hotfix itself: it reviews it and opens the maker portal to delete it there', async ({ page, org, targetOrg, extensionContext }) => {
         hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
         const panel = await openDeployer(page, org);
         const modal = await startCleanup(page, panel, targetOrg);
-        await expect(modal).toContainText('Uninstalling managed solution on');
+        await expect(modal).toContainText('Delete this managed hotfix in the maker portal');
         await expect(modal).toContainText('All 1 component(s) are also in another managed solution');
-        await modal.getByRole('button', { name: '🧹 Uninstall' }).click();
-
-        await expect(panel).toContainText('✅ Cleanup completed! Managed hotfix uninstalled', { timeout: 20_000 });
-        expect(targetOrg.calls('POST', '/UninstallSolutionAsync')).toHaveLength(1);
-        expect(targetOrg.calls('POST', '/RemoveActiveCustomization')).toHaveLength(0);
+        await expect(modal.getByRole('button', { name: /Uninstall|Run Cleanup/ })).toHaveCount(0);
+        expect(await openInPortal(modal, extensionContext)).toBe(`https://make.powerapps.com/environments/${targetOrg.environmentId}/solutions`);
+        await expect(modal).toHaveCount(0);
+        expect(targetOrg.calls('POST', '/UninstallSolutionAsync')).toHaveLength(0);
         expect(targetOrg.calls('DELETE', /^\/solutions\(/)).toHaveLength(0);
     });
 
-    test('names what only the hotfix holds and will be deleted, and asks for an explicit yes', async ({ page, org, targetOrg }) => {
+    test('names what only the hotfix holds, which deleting it would take with it', async ({ page, org, targetOrg }) => {
         hotfixOnTarget(org, targetOrg, [FIXED_FLOW, NEW_FLOW]);
         const panel = await openDeployer(page, org);
         const modal = await startCleanup(page, panel, targetOrg);
@@ -438,11 +489,8 @@ test.describe('Solution Deployer — managed hotfix', () => {
         await expect(modal).toContainText('Lead | New hotfix flow');
         await expect(modal).not.toContainText('Lead | Score new lead');
         await expect(modal).toContainText('WITH their data');
-        const uninstall = modal.getByRole('button', { name: '🧹 Uninstall' });
-        await expect(uninstall).toBeDisabled();
-        await modal.getByText('I understand that these components').click();
-        await uninstall.click();
-        await expect(panel).toContainText('✅ Cleanup completed! Managed hotfix uninstalled', { timeout: 20_000 });
+        // Where to find it: the portal lists managed solutions by display name.
+        await expect(modal).toContainText('Managed → Core Solution → ⋮ → Delete');
     });
 
     test('lists the managed hotfixes it deployed among the solutions to clean up — not the managed release', async ({ page, org, targetOrg, serviceWorker }) => {
@@ -467,7 +515,7 @@ test.describe('Solution Deployer — managed hotfix', () => {
         await expect(picker.locator('.sd-item', { hasText: 'Microsoft Thing' })).toHaveCount(0);
     });
 
-    test('remembers a managed deploy as a hotfix of that target, and forgets it once uninstalled', async ({ page, org, targetOrg, serviceWorker }) => {
+    test('remembers a managed deploy as a hotfix of that target, and forgets it once it is gone from there', async ({ page, org, targetOrg, serviceWorker }) => {
         deployableOrgs(org, targetOrg);
         targetOrg.table('solutions', []);
         const panel = await openDeployer(page, org);
@@ -477,11 +525,103 @@ test.describe('Solution Deployer — managed hotfix', () => {
             .then((r) => r['vals/solution-deployer/managedHotfixes']));
         expect(await hotfixes()).toEqual({ [targetOrg.origin.toLowerCase()]: ['Core'] });
 
-        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        // Deleted in the maker portal: the next list of the target's solutions drops it.
+        targetOrg.table('solutions', [{ solutionid: guid(15), uniquename: 'Work', friendlyname: 'Work in progress', version: '1.0', ismanaged: false, isvisible: true }]);
         await panel.getByRole('button', { name: '🔄 New Deployment' }).click();
-        const modal = await startCleanup(page, panel, targetOrg);
-        await modal.getByRole('button', { name: '🧹 Uninstall' }).click();
-        await expect(panel).toContainText('✅ Cleanup completed! Managed hotfix uninstalled', { timeout: 20_000 });
+        await panel.getByRole('button', { name: '🧹 Cleanup' }).click();
+        await setTarget(panel, targetOrg);
+        await panel.getByRole('button', { name: '📦 Fetch solutions from target…' }).click();
+        await expect(page.locator('.sd-modal .sd-item', { hasText: 'Work in progress' })).toBeVisible();
         expect(await hotfixes()).toEqual({ [targetOrg.origin.toLowerCase()]: [] });
+    });
+
+    const storedHotfixes = (serviceWorker) => serviceWorker.evaluate(() => chrome.storage.local.get('vals/solution-deployer/managedHotfixes')
+        .then((r) => r['vals/solution-deployer/managedHotfixes']));
+
+    test('does not take a managed solution that was already on the target for a hotfix', async ({ page, org, targetOrg, serviceWorker }) => {
+        // Deploying the release's source over its managed copy updates the release:
+        // that must not put the release on Cleanup's list of disposable hotfixes.
+        deployableOrgs(org, targetOrg);
+        targetOrg.table('solutions', [{ ...SOLUTION, solutionid: guid(12), ismanaged: true }]);
+        const panel = await openDeployer(page, org);
+        await deployManaged(page, panel, targetOrg);
+        await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 20_000 });
+        await expect(panel).toContainText('was already installed managed on the target');
+        await expect(panel).not.toContainText('clean the hotfix up with Cleanup');
+        expect((await storedHotfixes(serviceWorker))?.[targetOrg.origin.toLowerCase()] ?? []).toEqual([]);
+    });
+
+    test('keeps a hotfix it deployed before on the list when deploying it again', async ({ page, org, targetOrg, serviceWorker }) => {
+        deployableOrgs(org, targetOrg);
+        targetOrg.table('solutions', [{ ...SOLUTION, solutionid: guid(12), ismanaged: true }]);
+        await serviceWorker.evaluate((target) => chrome.storage.local.set({
+            'vals/solution-deployer/managedHotfixes': { [target]: ['Core'] },
+        }), targetOrg.origin.toLowerCase());
+        const panel = await openDeployer(page, org);
+        await deployManaged(page, panel, targetOrg);
+        await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 20_000 });
+        await expect(panel).toContainText('clean the hotfix up with Cleanup');
+        expect(await storedHotfixes(serviceWorker)).toEqual({ [targetOrg.origin.toLowerCase()]: ['Core'] });
+    });
+
+    test('follows every page of the hotfix\'s components before saying nothing is deleted', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW, NEW_FLOW]);
+        // The hotfix-only flow sits on the second page of components.
+        targetOrg.on('GET', '/solutioncomponents', (req) => {
+            if (req.query.get('$expand') || !/_solutionid_value/.test(req.query.get('$filter') ?? '')) return undefined;
+            const row = (id) => ({ componenttype: 29, objectid: id });
+            if (!req.query.get('$skiptoken')) {
+                return { value: [row(FIXED_FLOW)], '@odata.nextLink': `${targetOrg.origin}/api/data/v9.2/solutioncomponents?$filter=${encodeURIComponent(req.query.get('$filter'))}&$select=componenttype,objectid&$skiptoken=2` };
+            }
+            return { value: [row(NEW_FLOW)] };
+        });
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await expect(modal).toContainText('1 of 2 component(s) exist only in this hotfix on the target');
+        await expect(modal).toContainText('Lead | New hotfix flow');
+        await expect(modal).not.toContainText('nothing is deleted');
+    });
+
+    test('says so, and never "nothing is deleted", when it cannot work out what would be deleted', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        targetOrg.on('GET', '/solutioncomponents', (req) => (req.query.get('$expand')
+            ? { status: 500, json: { error: { code: '0x80040216', message: 'Generic SQL error.' } } } : undefined));
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await expect(modal).toContainText('Could not check which components only this hotfix holds');
+        await expect(modal).not.toContainText('nothing is deleted');
+        await expect(modal).not.toContainText('All 1 component(s)');
+        await modal.getByRole('button', { name: 'Close' }).click();
+        await expect(modal).toHaveCount(0);
+    });
+
+    test('stops when it cannot look the solution up, instead of treating it as unmanaged', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        targetOrg.on('GET', '/solutions', (req) => (/uniquename eq 'Core'/.test(req.query.get('$filter') ?? '')
+            ? { status: 503, json: { error: { code: '0x80040216', message: 'Service unavailable.' } } } : undefined));
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await expect(modal).toContainText('Could not look up "Core" on the target');
+        await expect(modal.getByRole('button', { name: /Run Cleanup|Uninstall/ })).toHaveCount(0);
+        await modal.getByRole('button', { name: 'Cancel' }).click();
+        expect(targetOrg.calls('POST', '/UninstallSolutionAsync')).toHaveLength(0);
+        expect(targetOrg.calls('DELETE', /^\/solutions\(/)).toHaveLength(0);
+    });
+
+    test('does only what was confirmed: an unmanaged cleanup never uninstalls a managed solution', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        // Confirmed as unmanaged; by the time the pipeline looks again, it is managed.
+        let lookups = 0;
+        targetOrg.on('GET', '/solutions', (req) => {
+            if (!/uniquename eq 'Core'/.test(req.query.get('$filter') ?? '')) return undefined;
+            lookups += 1;
+            return { value: [{ ...HOTFIX, ismanaged: lookups > 1 }] };
+        });
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await modal.getByRole('button', { name: '🧹 Run Cleanup' }).click();
+        await expect(panel).toContainText('❌ Cleanup failed: "Core" changed on the target since you confirmed');
+        expect(targetOrg.calls('POST', '/UninstallSolutionAsync')).toHaveLength(0);
+        expect(targetOrg.calls('DELETE', /^\/solutions\(/)).toHaveLength(0);
     });
 });
