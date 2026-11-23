@@ -211,6 +211,8 @@ test.describe('Solution Deployer — cleanup', () => {
             { solutioncomponentid: guid(73), _solutionid_value: guid(12), componenttype: 29, objectid: guid(74) },
             { solutioncomponentid: guid(75), _solutionid_value: guid(12), componenttype: 9999, objectid: guid(76) },
         ]);
+        targetOrg.table('msdyn_solutioncomponentsummaries', []);
+        targetOrg.table('msdyn_componentlayers', []);
         targetOrg.on('POST', '/RemoveActiveCustomization', () => ({ status: 204 }));
         const panel = await openDeployer(page, org);
         await cleanup(page, panel, targetOrg, { removeLayers: true });
@@ -220,6 +222,49 @@ test.describe('Solution Deployer — cleanup', () => {
             { LogicalName: 'webresource', Id: guid(72) },
             { LogicalName: 'workflow', Id: guid(74) },
         ]);
+    });
+
+    test('says, per component, what removing the unmanaged layers would lose before anything is removed', async ({ page, org, targetOrg }) => {
+        // Layer rows shaped like a live org's msdyn_componentlayers (trimmed to the attributes that matter).
+        const entity = (attrs) => JSON.stringify({ LogicalName: 'workflow', Attributes: Object.entries(attrs).map(([Key, Value]) => ({ Key, Value })) });
+        const RENAMED = guid(81), COVERED = guid(82), DESCRIBED = guid(83), ONLY_HERE = guid(84);
+        org.table('solutions', [{ ...SOLUTION }]);
+        targetOrg.table('solutions', [{ ...SOLUTION, solutionid: guid(12) }]);
+        targetOrg.table('solutioncomponents', [RENAMED, COVERED, DESCRIBED, ONLY_HERE].map((id, i) => (
+            { solutioncomponentid: guid(85 + i), _solutionid_value: guid(12), componenttype: 29, objectid: id })));
+        const names = { [RENAMED]: 'Lead | Score new lead', [COVERED]: 'Order | Notify warehouse', [DESCRIBED]: 'Case | Route to queue', [ONLY_HERE]: 'Scratch flow' };
+        targetOrg.table('msdyn_solutioncomponentsummaries', Object.entries(names).map(([id, name]) => (
+            { msdyn_solutionid: guid(12), msdyn_objectid: id, msdyn_displayname: name, msdyn_name: name, msdyn_componenttypename: 'Process' })));
+        const layer = (id, order, solution, changes, state = changes) => ({
+            msdyn_componentid: id, msdyn_solutioncomponentname: 'Workflow', msdyn_order: order, msdyn_solutionname: solution,
+            msdyn_changes: entity(changes), msdyn_componentjson: entity(state),
+        });
+        targetOrg.table('msdyn_componentlayers', [
+            layer(RENAMED, 2, 'Active', { workflowidunique: 'a', name: 'Lead | Score new lead (TEST edit)' }),
+            layer(RENAMED, 1, 'Release', { name: 'Lead | Score new lead', workflowidunique: 'b' }),
+            layer(COVERED, 2, 'Active', { workflowidunique: 'c', name: 'Order | Notify warehouse' }),
+            layer(COVERED, 1, 'Release', { name: 'Order | Notify warehouse' }),
+            layer(DESCRIBED, 2, 'Active', { workflowidunique: 'd', description: 'Edited in TEST' }),
+            layer(DESCRIBED, 1, 'Release', { name: 'Case | Route to queue' }),
+            layer(ONLY_HERE, 1, 'Active', { name: 'Scratch flow' }),
+        ]);
+        const panel = await openDeployer(page, org);
+        await panel.getByRole('button', { name: '🧹 Cleanup' }).click();
+        await setTarget(panel, targetOrg);
+        const nameInput = panel.getByPlaceholder('e.g. QuickDeploy_20260512');
+        await nameInput.fill('Core');
+        await nameInput.press('Tab');
+        await panel.getByText('Also remove active customizations (unmanaged layers)').click();
+        await panel.locator('.sd-footer').getByRole('button', { name: '🧹 Run Cleanup' }).click();
+
+        const modal = page.locator('.sd-modal');
+        await expect(modal).toContainText('What removing the unmanaged layers loses');
+        await expect(modal).toContainText('🔁 Lead | Score new lead (Process) — reverts to Release: name "Lead | Score new lead (TEST edit)" → "Lead | Score new lead"');
+        await expect(modal).toContainText('❔ Case | Route to queue (Process) — changes description unmanaged');
+        await expect(modal).toContainText('✅ 1 component(s): the managed layer below already has these changes — nothing is lost.');
+        await expect(modal).toContainText('1 component(s) have no unmanaged layer over a managed one');
+        await modal.getByRole('button', { name: 'Cancel' }).click();
+        expect(targetOrg.calls('POST', '/RemoveActiveCustomization'), 'nothing is removed by looking').toHaveLength(0);
     });
 });
 

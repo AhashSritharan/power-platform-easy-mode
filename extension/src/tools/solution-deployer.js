@@ -455,16 +455,17 @@ async function findTargetSolution(targetUrl, uniqueName) {
 }
 
 /** The hotfix's components on the target, named, and which of them an uninstall deletes. */
-async function analyzeHotfixUninstall(targetUrl, solution) {
+/** A solution's components on the target — every page — each with a display name and type name. */
+async function namedSolutionComponents(targetUrl, solutionId) {
     const rows = await targetGetAll(targetUrl,
-        `/solutioncomponents?$filter=_solutionid_value eq ${solution.solutionid}&$select=componenttype,objectid`);
+        `/solutioncomponents?$filter=_solutionid_value eq ${solutionId}&$select=componenttype,objectid`);
     let names = new Map();
     try {
         const summaries = await targetGetAll(targetUrl,
-            `/msdyn_solutioncomponentsummaries?$filter=${encodeURIComponent(`(msdyn_solutionid eq ${solution.solutionid})`)}&$select=msdyn_objectid,msdyn_displayname,msdyn_name,msdyn_componenttypename&api-version=9.1`);
+            `/msdyn_solutioncomponentsummaries?$filter=${encodeURIComponent(`(msdyn_solutionid eq ${solutionId})`)}&$select=msdyn_objectid,msdyn_displayname,msdyn_name,msdyn_componenttypename&api-version=9.1`);
         names = new Map(summaries.map((s) => [cleanGuid(s.msdyn_objectid), s]));
     } catch { /* names are a nicety: fall back to type and id */ }
-    const components = rows.map((r) => {
+    return rows.map((r) => {
         const summary = names.get(cleanGuid(r.objectid));
         return {
             objectid: r.objectid, componenttype: r.componenttype,
@@ -472,6 +473,10 @@ async function analyzeHotfixUninstall(targetUrl, solution) {
             typeName: summary?.msdyn_componenttypename || COMPONENT_TYPE_LABELS[r.componenttype] || `Type ${r.componenttype}`,
         };
     });
+}
+
+async function analyzeHotfixUninstall(targetUrl, solution) {
+    const components = await namedSolutionComponents(targetUrl, solution.solutionid);
     const memberships = [];
     const ids = [...new Set(components.map((c) => cleanGuid(c.objectid)))];
     for (let i = 0; i < ids.length; i += 25) {
@@ -492,6 +497,128 @@ async function targetEnvironmentId(targetUrl) {
     } catch { /* ask the target */ }
     const org = await targetApi(targetUrl, "/RetrieveCurrentOrganization(AccessType='Default')");
     return cleanGuid(org?.Detail?.EnvironmentId ?? '');
+}
+
+// ── What removing an unmanaged layer loses ────────────────────────────────
+// msdyn_componentlayers lists a component's layers, top first by msdyn_order.
+// The unmanaged one is the solution "Active"; its msdyn_changes holds only what
+// that layer sets. Each layer's msdyn_componentjson holds the component as of
+// that layer. Comparing the Active layer's changes with the managed layer right
+// beneath says what RemoveActiveCustomization would revert. Measured on a live
+// org (2026-11-23): an unmanaged rename shows up as `name` in the Active
+// changes against the old name below; after a managed import that overwrote
+// the layer, only bookkeeping is left in it. Some attributes (a flow's
+// description) are in the changes but in no layer's componentjson — those are
+// reported as not comparable, never as safe.
+
+// Attributes every save rewrites: they always differ and say nothing.
+const LAYER_BOOKKEEPING = new Set([
+    'workflowidunique', 'modifiedon', 'modifiedby', 'modifiedonbehalfby', 'createdon', 'createdby', 'createdonbehalfby',
+    'versionnumber', 'overwritetime', 'solutionid', 'supportingsolutionid', 'ismanaged', 'componentstate', 'introducedversion',
+]);
+
+/** A layer's msdyn_changes / msdyn_componentjson as { attribute: value }. */
+export function layerAttributes(json) {
+    if (!json) return {};
+    try { return Object.fromEntries((JSON.parse(json).Attributes ?? []).map((a) => [a.Key, a.Value])); } catch { return {}; }
+}
+
+// Strings holding JSON (flow definitions, labels) compare by content; label ids
+// and their publish state differ between layers without meaning anything.
+function comparable(value) {
+    if (typeof value === 'string' && /^\s*[[{]/.test(value)) {
+        try { return comparable(JSON.parse(value)); } catch { return value; }
+    }
+    if (Array.isArray(value)) return value.map(comparable);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.keys(value).sort()
+            .filter((k) => k !== 'LocalizedLabelId' && k !== 'ComponentState')
+            .map((k) => [k, comparable(value[k])]));
+    }
+    return value;
+}
+const sameValue = (a, b) => JSON.stringify(comparable(a)) === JSON.stringify(comparable(b));
+
+/**
+ * What removing the Active layer would revert: each attribute it changes whose
+ * value in the managed layer beneath differs (`revert`), or is not there to
+ * compare (`unknown`). Both empty: the managed layer already has it all.
+ */
+export function unmanagedLayerLoss(activeChangesJson, managedComponentJson) {
+    const changes = layerAttributes(activeChangesJson);
+    const below = layerAttributes(managedComponentJson);
+    const revert = [], unknown = [];
+    for (const [attribute, now] of Object.entries(changes)) {
+        if (LAYER_BOOKKEEPING.has(attribute)) continue;
+        if (!(attribute in below)) unknown.push(attribute);
+        else if (!sameValue(now, below[attribute])) revert.push({ attribute, now, below: below[attribute] });
+    }
+    return { revert, unknown };
+}
+
+// msdyn_componentlayers wants the component's type by name. Only names checked
+// against a live org are used: a wrong one returns no layers, which must not
+// pass for "no unmanaged layer".
+const LAYER_COMPONENT_NAMES = {
+    1: 'Entity', 2: 'Attribute', 9: 'OptionSet', 26: 'SavedQuery', 29: 'Workflow', 60: 'SystemForm', 61: 'WebResource',
+};
+
+/** Per component of an unmanaged solution on the target: what removing its unmanaged layer would lose. */
+async function analyzeLayerRemoval(targetUrl, solutionId) {
+    const components = await namedSolutionComponents(targetUrl, solutionId);
+    const results = [];
+    for (const component of components) {
+        const typeName = LAYER_COMPONENT_NAMES[component.componenttype];
+        if (!typeName) { results.push({ ...component, status: 'unchecked' }); continue; }
+        let layers;
+        try {
+            layers = await targetGetAll(targetUrl, `/msdyn_componentlayers?$filter=${encodeURIComponent(
+                `(msdyn_componentid eq '${cleanGuid(component.objectid)}' and msdyn_solutioncomponentname eq '${typeName}')`)}&$select=msdyn_solutionname,msdyn_order,msdyn_changes,msdyn_componentjson`);
+        } catch { results.push({ ...component, status: 'unchecked' }); continue; }
+        // A component always has a layer; none at all means it could not be read.
+        if (!layers.length) { results.push({ ...component, status: 'unchecked' }); continue; }
+        layers.sort((a, b) => b.msdyn_order - a.msdyn_order);
+        const [top, beneath] = layers;
+        if (top.msdyn_solutionname !== 'Active') { results.push({ ...component, status: 'nolayer' }); continue; }
+        if (!beneath) { results.push({ ...component, status: 'unmanagedonly' }); continue; }
+        const loss = unmanagedLayerLoss(top.msdyn_changes, beneath.msdyn_componentjson);
+        results.push({ ...component, ...loss, below: beneath.msdyn_solutionname,
+            status: loss.revert.length ? 'revert' : loss.unknown.length ? 'unknown' : 'covered' });
+    }
+    return results;
+}
+
+const shortValue = (value) => {
+    const text = typeof value === 'string' ? value : JSON.stringify(value?.LocalizedLabels ?? value?.Value ?? value);
+    return text.length > 60 ? `${text.slice(0, 57)}…` : text;
+};
+
+/** The confirmation's account of what removing the layers loses, per component. */
+function layerLossReport(results) {
+    const lines = [];
+    const by = (status) => results.filter((r) => r.status === status);
+    for (const r of by('revert')) {
+        lines.push(ui.el('div', { style: 'font-size:12px;padding:3px 4px;color:#D13438' }, [
+            ui.el('strong', { textContent: `🔁 ${r.name}` }), ` (${r.typeName}) — reverts to ${r.below}: `,
+            r.revert.map((d) => `${d.attribute} "${shortValue(d.now)}" → "${shortValue(d.below)}"`).join('; '),
+            ...(r.unknown.length ? [`; also changed, not comparable: ${r.unknown.join(', ')}`] : []),
+        ]));
+    }
+    for (const r of by('unknown')) {
+        lines.push(ui.el('div', { style: 'font-size:12px;padding:3px 4px;color:#835C00' }, [
+            ui.el('strong', { textContent: `❔ ${r.name}` }), ` (${r.typeName}) — changes ${r.unknown.join(', ')} unmanaged; the layer below does not show these, so check before removing.`,
+        ]));
+    }
+    const covered = by('covered').length, unchecked = by('unchecked'), untouched = by('nolayer').length + by('unmanagedonly').length;
+    const summary = [];
+    if (covered) summary.push(`✅ ${covered} component(s): the managed layer below already has these changes — nothing is lost.`);
+    if (untouched) summary.push(`${untouched} component(s) have no unmanaged layer over a managed one; they are left as they are.`);
+    if (unchecked.length) summary.push(`Not checked: ${unchecked.map((r) => r.name).join(', ')} — check these yourself.`);
+    return ui.el('div', { style: 'margin-bottom:16px' }, [
+        ui.el('div', { style: 'font-size:13px;font-weight:600;margin-bottom:6px', textContent: 'What removing the unmanaged layers loses' }),
+        ...(lines.length ? [ui.el('div', { style: 'max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--bg2)' }, lines)] : []),
+        ...summary.map((text) => ui.el('div', { style: 'font-size:12px;margin-bottom:4px', textContent: text })),
+    ]);
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -961,8 +1088,7 @@ async function runCleanupPipeline() {
         if (sol.ismanaged) throw new Error(`"${solName}" is managed — delete it in the maker portal; the deployer does not uninstall solutions.`);
 
         if (removeLayers) {
-            const componentsData = await targetApi(targetUrl, `/solutioncomponents?$filter=_solutionid_value eq '${sol.solutionid}'&$select=solutioncomponentid,componenttype,objectid&$top=1000`);
-            const components = componentsData.value ?? [];
+            const components = await targetGetAll(targetUrl, `/solutioncomponents?$filter=_solutionid_value eq '${sol.solutionid}'&$select=solutioncomponentid,componenttype,objectid`);
             addLog('success', `Found ${components.length} component(s).`);
 
             addLog('info', 'Removing active customizations (unmanaged layers)…');
@@ -1557,6 +1683,11 @@ async function showCleanupConfirmation() {
     if (onTarget?.ismanaged) return showHotfixReview(onTarget, { targetInfo, targetHostname });
 
     const removeLayers = state.cleanupRemoveLayers;
+    let layerLoss = null, layerLossError = '';
+    if (removeLayers && onTarget) {
+        ui.toast('Checking what removing the unmanaged layers would lose…');
+        try { layerLoss = await analyzeLayerRemoval(state.targetEnvUrl, onTarget.solutionid); } catch (e) { layerLossError = e.message.split('\n')[0]; }
+    }
     const warnings = [];
     const isSameEnv = !!(sourceInfo?.envId && targetInfo?.envId && sourceInfo.envId === targetInfo.envId);
     if (isSameEnv) warnings.push({ level: 'error', icon: '🚫', text: 'You are cleaning up the same environment you are on!' });
@@ -1586,6 +1717,8 @@ async function showCleanupConfirmation() {
                     ? '1. Remove active customization (unmanaged layer) from each component. 2. Delete the unmanaged solution from the target.'
                     : 'Delete the unmanaged solution from the target. Components keep their unmanaged layer on top until it is removed, even after a managed import.',
             ]),
+            ...(layerLoss ? [layerLossReport(layerLoss)] : []),
+            ...(layerLossError ? [ui.el('div', { className: 'sd-err-box', style: 'margin-bottom:16px;font-size:13px', textContent: `Could not check what removing the unmanaged layers would lose — check before removing: ${layerLossError}` })] : []),
             ...(warnings.length ? [ui.el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-bottom:20px' }, warnings.map(warningAlert))] : []),
         );
     }, isSameEnv ? null : {

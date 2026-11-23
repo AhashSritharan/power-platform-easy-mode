@@ -240,7 +240,11 @@ unmanaged customizations", and later managed imports without that option don't
 take effect. Tick **Also remove active customizations** to remove those layers
 too, so the environment is as if you had never deployed unmanaged. Do that only
 after the managed release with the same changes is in; before, it brings back
-the previous managed version.
+the previous managed version. Before you confirm, Cleanup compares each
+component's unmanaged layer with the managed layer beneath it. It lists what
+would revert (e.g. a flow's name going back to the release's), marks changes
+it cannot compare, and says when the managed layer already has everything, so
+nothing is lost.
 
 **Deploy as managed (hotfix)**, a tick on the target step, ships a hotfix
 without leaving any unmanaged layer in TEST or PROD. The solution is exported
