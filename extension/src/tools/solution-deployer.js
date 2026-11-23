@@ -1,9 +1,10 @@
 // Solution Deployer (native).
-// Deploys unmanaged solutions between environments: create-or-pick a solution,
+// Deploys solutions between environments: create-or-pick a solution,
 // export from the current org, import into a target org with live importjob
 // progress, then publish. Also checks missing dependencies against a target
 // (with one-click "add to solution" fixes) and cleans up the deployed solution
-// (optionally also removing the unmanaged layers it left behind).
+// (optionally also removing the unmanaged layers it left behind). With "Deploy
+// as managed" a hotfix goes over managed instead, and Cleanup uninstalls it.
 //
 // The import goes over as one ordinary proxied POST to ImportSolutionAsync,
 // and the job is then watched from here. It used to be fired from a helper tab
@@ -271,7 +272,7 @@ const EXPORT_LIMITS = {
  * it either hands back a file or says why it cannot.
  */
 export async function pollExportProgress({
-    readAsyncOperation, log = () => {},
+    readAsyncOperation, log = () => {}, what = 'export',
     pollMs = EXPORT_POLL_MS, limits = EXPORT_LIMITS,
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
@@ -296,19 +297,19 @@ export async function pollExportProgress({
                 if (op.statuscode === 30) return;
                 const reason = (op.friendlymessage || op.message || '').split('\n')[0].trim();
                 const verdict = ASYNC_STATUS[op.statuscode] ?? `ended with status ${op.statuscode}`;
-                throw new Error(`The export job ${verdict}${reason ? `: ${reason}` : '.'}`);
+                throw new Error(`The ${what} job ${verdict}${reason ? `: ${reason}` : '.'}`);
             }
             if (!queuedLogged && op.statuscode < ASYNC_RUNNING) {
                 queuedLogged = true;
-                log('info', '⏳ Export queued, waiting for a worker to pick it up…');
+                log('info', `⏳ ${what[0].toUpperCase()}${what.slice(1)} queued, waiting for a worker to pick it up…`);
             }
         }
 
         if (Date.now() - lastSignal >= limits.silence) {
-            throw new Error('Lost contact with this environment while exporting.');
+            throw new Error(`Lost contact with the environment during the ${what}.`);
         }
         if (Date.now() - startTime >= limits.total) {
-            throw new Error('The export job has not finished. Check the system jobs in this environment.');
+            throw new Error(`The ${what} job has not finished. Check the system jobs in the environment.`);
         }
     }
 }
@@ -373,6 +374,118 @@ async function startImport(targetUrl, solutionFileBase64, callerIdGuid, importJo
     return asyncOperationId;
 }
 
+// ── Managed hotfixes ──────────────────────────────────────────────────────
+// A hotfix can go over managed: exported managed and imported as a plain
+// update, it becomes one more managed layer above the release that holds the
+// same components, and leaves no unmanaged layer behind in TEST or PROD.
+// Importing it again replaces it, without a holding solution or an upgrade.
+// It is cleaned up by uninstalling it, which drops its layer — and deletes
+// every component no other managed solution holds.
+
+/**
+ * The target's copy of the solution, if any, held the other way round from
+ * this deploy. Dataverse refuses both directions (a managed import over an
+ * unmanaged solution and the reverse), and its own message names neither the
+ * cause nor the way out.
+ */
+export function deployModeConflict(targetSolution, uniqueName, managed) {
+    if (!targetSolution || !!targetSolution.ismanaged === !!managed) return null;
+    return managed
+        ? `"${uniqueName}" is on the target as an unmanaged solution, from an earlier unmanaged deploy. Run Cleanup on the target first (with "remove active customizations"), then deploy it managed.`
+        : `"${uniqueName}" is installed managed on the target. Turn on "Deploy as managed" to update it, or uninstall it with Cleanup first.`;
+}
+
+/**
+ * The hotfix's components that no other managed solution on the target holds:
+ * the ones its uninstall deletes, together with their data. `memberships` are
+ * solutioncomponents rows for those components across every solution, each
+ * with its solution expanded ({ solutionid, uniquename, ismanaged }). Default
+ * and other unmanaged solutions protect nothing — an unmanaged layer above the
+ * hotfix goes with the component.
+ */
+export function hotfixOnlyComponents(components, memberships, hotfixSolutionId) {
+    const hotfix = cleanGuid(hotfixSolutionId);
+    const protectedIds = new Set(memberships
+        .filter((m) => m.solutionid?.ismanaged && cleanGuid(m.solutionid.solutionid) !== hotfix)
+        .map((m) => cleanGuid(m.objectid)));
+    return components.filter((c) => !protectedIds.has(cleanGuid(c.objectid)));
+}
+
+// The managed hotfixes deployed from here, per target (lower-cased URL →
+// unique names). Cleanup lists these and nothing else managed: the release a
+// hotfix sits on is usually developed in the same source, so "the source holds
+// it unmanaged" would put the release itself one click from an uninstall.
+const hotfixKey = (targetUrl) => targetUrl.replace(/\/+$/, '').toLowerCase();
+async function rememberHotfix(targetUrl, uniqueName, present) {
+    const map = await store.get('managedHotfixes', {});
+    const names = (map[hotfixKey(targetUrl)] ?? []).filter((n) => n.toLowerCase() !== uniqueName.toLowerCase());
+    if (present) names.push(uniqueName);
+    map[hotfixKey(targetUrl)] = names;
+    await store.set('managedHotfixes', map);
+}
+
+async function findTargetSolution(targetUrl, uniqueName) {
+    const data = await targetApi(targetUrl, `/solutions?$filter=uniquename eq '${odataQuote(uniqueName)}'&$select=solutionid,uniquename,ismanaged,version`);
+    return data.value?.[0] ?? null;
+}
+
+/** The hotfix's components on the target, named, and which of them an uninstall deletes. */
+async function analyzeHotfixUninstall(targetUrl, solution) {
+    const rows = (await targetApi(targetUrl,
+        `/solutioncomponents?$filter=_solutionid_value eq ${solution.solutionid}&$select=componenttype,objectid&$top=5000`)).value ?? [];
+    let names = new Map();
+    try {
+        const summaries = (await targetApi(targetUrl,
+            `/msdyn_solutioncomponentsummaries?$filter=${encodeURIComponent(`(msdyn_solutionid eq ${solution.solutionid})`)}&$select=msdyn_objectid,msdyn_displayname,msdyn_name,msdyn_componenttypename&api-version=9.1`)).value ?? [];
+        names = new Map(summaries.map((s) => [cleanGuid(s.msdyn_objectid), s]));
+    } catch { /* names are a nicety: fall back to type and id */ }
+    const components = rows.map((r) => {
+        const summary = names.get(cleanGuid(r.objectid));
+        return {
+            objectid: r.objectid, componenttype: r.componenttype,
+            name: summary?.msdyn_displayname || summary?.msdyn_name || r.objectid,
+            typeName: summary?.msdyn_componenttypename || COMPONENT_TYPE_LABELS[r.componenttype] || `Type ${r.componenttype}`,
+        };
+    });
+    const memberships = [];
+    const ids = [...new Set(components.map((c) => cleanGuid(c.objectid)))];
+    for (let i = 0; i < ids.length; i += 25) {
+        const filter = ids.slice(i, i + 25).map((id) => `objectid eq ${id}`).join(' or ');
+        const data = await targetApi(targetUrl,
+            `/solutioncomponents?$filter=${encodeURIComponent(filter)}&$select=objectid,componenttype&$expand=solutionid($select=uniquename,ismanaged)`);
+        memberships.push(...(data.value ?? []));
+    }
+    return { components, hotfixOnly: hotfixOnlyComponents(components, memberships, solution.solutionid) };
+}
+
+// UninstallSolutionAsync, where the org offers it, for the same reason the
+// import is async; a DELETE of the solution row uninstalls it too, but holds the
+// request open for as long as the uninstall takes.
+async function uninstallSolution(targetUrl, solution, log) {
+    let started;
+    try {
+        started = await targetApi(targetUrl, '/UninstallSolutionAsync', {
+            method: 'POST', body: JSON.stringify({ SolutionUniqueName: solution.uniquename }),
+        });
+    } catch (e) {
+        if (e.status !== 404) throw e;
+        log('info', 'UninstallSolutionAsync is not available on the target — deleting the solution record instead.');
+        await targetApi(targetUrl, `/solutions(${solution.solutionid})`, { method: 'DELETE' });
+        return;
+    }
+    const asyncOperationId = cleanGuid(started?.AsyncOperationId ?? '');
+    if (!isValidGuid(asyncOperationId)) throw new Error('The target accepted the uninstall request but returned no async job id.');
+    log('success', `Uninstall job created on target (async operation ${asyncOperationId}).`);
+    await pollExportProgress({
+        what: 'uninstall', log,
+        readAsyncOperation: () => targetApi(targetUrl,
+            `/asyncoperations(${asyncOperationId})?$select=statecode,statuscode,friendlymessage,message`),
+    });
+    if (await findTargetSolution(targetUrl, solution.uniquename)) {
+        throw new Error('The uninstall job finished, but the solution is still on the target. Check Solution History there.');
+    }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────
 let panelOpen = false;
 let state = {};
@@ -401,7 +514,8 @@ async function resetState() {
         existingSolutionId: '', existingSolutionName: '', existingSolutionDisplayName: '',
         solutionName: '', targetEnvUrl: '', savedTargets: [],
         impersonateUserId: '', impersonateUserName: '',
-        cleanupSolutionName: '', cleanupRemoveLayers: false,
+        deployManaged: false,
+        cleanupSolutionName: '', cleanupRemoveLayers: false, cleanupTarget: null,
         flowCheck: { status: 'idle', total: 0, off: [] },
         depCheckSolutionName: '', depCheckSolutionDisplayName: '', depCheckTargetUrl: '',
         depCheckResults: null, depCheckStatus: 'idle', depCheckError: '',
@@ -424,6 +538,7 @@ async function resetState() {
         state.depCheckSolutionName = lastSolution.name;
         state.depCheckSolutionDisplayName = state.existingSolutionDisplayName;
     }
+    state.deployManaged = !!(await recall('lastDeployManaged', false));
     const lastTarget = await recall('lastTargetUrl', '');
     if (lastTarget) {
         state.targetEnvUrl = lastTarget;
@@ -670,12 +785,21 @@ async function runDeployPipeline() {
     renderPanel();
 
     const solutionUniqueName = state.deployMode === 'existing' ? state.existingSolutionName : state.newSolutionUniqueName;
+    const managed = state.deployManaged;
     try {
         addLog('info', `Using solution "${state.existingSolutionDisplayName || state.newSolutionDisplayName || solutionUniqueName}"…`);
-        addLog('info', 'Exporting solution (unmanaged)…');
         state.importProgress = -1;
         updateProgressBar(-1);
-        const solutionFile = await exportSolution(solutionUniqueName, false, { log: addLog });
+        const onTarget = await findTargetSolution(state.targetEnvUrl, solutionUniqueName);
+        const conflict = deployModeConflict(onTarget, solutionUniqueName, managed);
+        if (conflict) throw new Error(conflict);
+        if (managed) {
+            addLog('info', onTarget
+                ? `Managed hotfix v${onTarget.version} is on the target — this import updates it in place (no upgrade).`
+                : 'Deploying as a managed hotfix: it becomes a managed layer above the release on the target.');
+        }
+        addLog('info', `Exporting solution (${managed ? 'managed' : 'unmanaged'})…`);
+        const solutionFile = await exportSolution(solutionUniqueName, managed, { log: addLog });
         addLog('success', `Solution exported (${Math.round(solutionFile.length * 0.75 / 1024)} KB).`);
 
         const impersonateId = state.impersonateUserId || null;
@@ -695,13 +819,18 @@ async function runDeployPipeline() {
         updateProgressBar(100);
         addLog('success', 'Solution imported to target.');
 
-        addLog('info', 'Publishing all customizations on target…');
-        state.publishing = true;
-        renderPanel();
-        updateProgressBar(100);
-        const publishHeaders = impersonateId ? { MSCRMCallerID: impersonateId } : {};
-        await targetApi(state.targetEnvUrl, '/PublishAllXml', { method: 'POST', headers: publishHeaders, body: JSON.stringify({}) });
-        addLog('success', 'All customizations published.');
+        if (managed) {
+            // A managed import is live once it finishes; there is no unmanaged draft to publish.
+            addLog('info', 'Managed import — nothing to publish.');
+        } else {
+            addLog('info', 'Publishing all customizations on target…');
+            state.publishing = true;
+            renderPanel();
+            updateProgressBar(100);
+            const publishHeaders = impersonateId ? { MSCRMCallerID: impersonateId } : {};
+            await targetApi(state.targetEnvUrl, '/PublishAllXml', { method: 'POST', headers: publishHeaders, body: JSON.stringify({}) });
+            addLog('success', 'All customizations published.');
+        }
 
         state.progressStatus = 'success';
         state.solutionName = solutionUniqueName;
@@ -712,6 +841,9 @@ async function runDeployPipeline() {
         await remember('lastSolutionDisplayName', state.existingSolutionDisplayName || state.newSolutionDisplayName || solutionUniqueName);
         await remember('lastSolutionId', state.existingSolutionId || state.newSolutionId || '');
         await remember('lastTargetUrl', state.targetEnvUrl);
+        await remember('lastDeployManaged', managed);
+        if (managed) await rememberHotfix(state.targetEnvUrl, solutionUniqueName, true);
+        if (managed) addLog('info', 'Once the release that contains this fix is installed on the target, clean the hotfix up with Cleanup — it uninstalls it.');
     } catch (e) {
         state.progressStatus = 'error';
         state.errorMessage = e.message;
@@ -803,9 +935,18 @@ async function runCleanupPipeline() {
         const removeLayers = state.cleanupRemoveLayers;
 
         addLog('info', `Looking up solution "${solName}" on target…`);
-        const solutions = await targetApi(targetUrl, `/solutions?$filter=uniquename eq '${odataQuote(solName)}'&$select=solutionid`);
-        const sol = solutions.value?.[0];
+        const sol = await findTargetSolution(targetUrl, solName);
         if (!sol) throw new Error(`Solution '${solName}' not found on target.`);
+
+        if (sol.ismanaged) {
+            addLog('info', `"${solName}" v${sol.version} is managed — uninstalling it…`);
+            await uninstallSolution(targetUrl, sol, addLog);
+            await rememberHotfix(targetUrl, sol.uniquename, false);
+            state.progressStatus = 'success';
+            addLog('success', '✅ Cleanup completed! Managed hotfix uninstalled — its components fall back to the managed layer below.');
+            renderPanel();
+            return;
+        }
 
         if (removeLayers) {
             const componentsData = await targetApi(targetUrl, `/solutioncomponents?$filter=_solutionid_value eq '${sol.solutionid}'&$select=solutioncomponentid,componenttype,objectid&$top=1000`);
@@ -1255,6 +1396,7 @@ function solutionPicker(title, loadSolutions, onPick) {
                         const item = ui.el('div', { className: 'sd-item' }, [
                             ui.el('strong', { textContent: s.friendlyname }),
                             ui.el('span', { style: 'color:var(--muted);font-size:11px', textContent: ` ${s.uniquename} v${s.version}` }),
+                            s.tag ? ui.el('span', { className: 'sd-badge', style: 'margin-left:6px', textContent: s.tag }) : '',
                             s.modifiedon ? ui.el('span', { style: 'color:var(--muted);font-size:11px;float:right', textContent: `modified ${new Date(s.modifiedon).toLocaleString()}` }) : '',
                         ]);
                         item.addEventListener('click', () => { close(); onPick(s); });
@@ -1297,18 +1439,29 @@ function warningAlert(w) {
 
 // Confirmation dialog whose backdrop/cancel resolve false and whose confirm
 // button resolves true. `buildBody(modal)` fills everything above the buttons.
+// With `confirmButton.acknowledge` (a sentence), the button stays disabled
+// until that sentence's checkbox is ticked.
 function confirmModal(buildBody, confirmButton, cancelLabel = 'Cancel') {
     return new Promise((resolve) => {
         sdModal((modal, close) => {
             const decide = (value) => { close(); resolve(value); };
             buildBody(modal);
+            const button = confirmButton ? ui.el('button', {
+                className: confirmButton.className,
+                textContent: confirmButton.label,
+                disabled: !!confirmButton.acknowledge,
+                onclick: () => decide(true),
+            }) : null;
+            if (confirmButton?.acknowledge) {
+                const box = ui.el('input', { type: 'checkbox', style: 'margin-top:2px;accent-color:#D13438' });
+                box.addEventListener('change', () => { button.disabled = !box.checked; });
+                modal.append(ui.el('label', {
+                    style: 'display:flex;gap:8px;align-items:flex-start;margin-bottom:16px;font-size:13px;font-weight:600;color:#D13438;cursor:pointer',
+                }, [box, ui.el('span', { textContent: confirmButton.acknowledge })]));
+            }
             modal.append(ui.el('div', { style: 'display:flex;justify-content:flex-end;gap:8px' }, [
                 ui.el('button', { className: 'ppt-btn', textContent: cancelLabel, onclick: () => decide(false) }),
-                ...(confirmButton ? [ui.el('button', {
-                    className: confirmButton.className,
-                    textContent: confirmButton.label,
-                    onclick: () => decide(true),
-                })] : []),
+                ...(button ? [button] : []),
             ]));
         }, () => resolve(false));
     });
@@ -1329,6 +1482,9 @@ async function showDeployConfirmation() {
     if (targetInfo?.label === 'PROD') warnings.push({ level: 'warning', icon: '🔴', text: 'Target is PRODUCTION — proceed with extra caution.' });
     if (!sourceInfo) warnings.push({ level: 'info', icon: 'ℹ️', text: 'Source environment type is unknown. Set it up in the Environment Indicator.' });
     if (!targetInfo) warnings.push({ level: 'info', icon: 'ℹ️', text: 'Target environment type is unknown. Set it up in the Environment Indicator.' });
+    const modeLine = state.deployManaged
+        ? '📦 Managed — imported as an update: a managed layer above the release, no unmanaged layer left behind. Clean up later by uninstalling it.'
+        : '📝 Unmanaged — leaves an unmanaged layer on top of every component until Cleanup removes it.';
 
     return confirmModal((modal) => {
         modal.append(
@@ -1344,6 +1500,7 @@ async function showDeployConfirmation() {
                 ]),
                 envBox('TARGET', targetHostname, targetInfo),
             ]),
+            ui.el('div', { className: 'sd-alert-info', textContent: modeLine }),
             ...(warnings.length ? [ui.el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-bottom:20px' }, warnings.map(warningAlert))] : []),
         );
     }, isSameEnv ? null : {
@@ -1384,6 +1541,10 @@ async function showCleanupConfirmation() {
     let targetHostname = state.targetEnvUrl;
     try { targetHostname = new URL(state.targetEnvUrl).hostname; } catch { /* keep raw */ }
 
+    let onTarget = null;
+    try { onTarget = await findTargetSolution(state.targetEnvUrl, state.cleanupSolutionName); } catch { /* the pipeline reports it */ }
+    if (onTarget?.ismanaged) return showUninstallConfirmation(onTarget, { sourceInfo, targetInfo, targetHostname });
+
     const removeLayers = state.cleanupRemoveLayers;
     const warnings = [];
     const isSameEnv = !!(sourceInfo?.envId && targetInfo?.envId && sourceInfo.envId === targetInfo.envId);
@@ -1419,6 +1580,63 @@ async function showCleanupConfirmation() {
     }, isSameEnv ? null : {
         className: 'sd-btn-danger',
         label: targetInfo?.label === 'PROD' ? '🧹 Clean up PROD' : '🧹 Run Cleanup',
+    });
+}
+
+// A managed hotfix is cleaned up by uninstalling it. That removes its layer
+// from every component, which then falls back to the managed layer below —
+// and deletes, with their data, the components no other managed solution
+// holds. Those are worked out and named before anything is confirmed.
+async function showUninstallConfirmation(solution, { sourceInfo, targetInfo, targetHostname }) {
+    ui.toast('Checking what the uninstall would delete…');
+    let analysis = null, analysisError = '';
+    try { analysis = await analyzeHotfixUninstall(state.targetEnvUrl, solution); } catch (e) { analysisError = e.message; }
+
+    const warnings = [];
+    const isSameEnv = !!(sourceInfo?.envId && targetInfo?.envId && sourceInfo.envId === targetInfo.envId);
+    if (isSameEnv) warnings.push({ level: 'error', icon: '🚫', text: 'You are cleaning up the same environment you are on!' });
+    warnings.push({ level: 'error', icon: '⚠️', text: 'Uninstalling deletes every component that exists only in this hotfix — new flows, new tables and columns WITH their data — unless a managed release containing them is installed first.' });
+    if (targetInfo?.label === 'PROD') warnings.push({ level: 'warning', icon: '🔴', text: 'Target is PRODUCTION — install the release containing the fix before uninstalling the hotfix here.' });
+    if (!targetInfo) warnings.push({ level: 'info', icon: 'ℹ️', text: 'Target environment type is unknown. Set it up in the Environment Indicator.' });
+
+    const doomed = analysis?.hotfixOnly ?? [];
+    const total = analysis?.components.length ?? 0;
+    return confirmModal((modal) => {
+        modal.style.borderTop = '4px solid #D13438';
+        modal.append(
+            ui.el('div', { style: 'display:flex;align-items:center;gap:10px;margin-bottom:20px' }, [
+                ui.el('span', { style: 'background:#FDE7E9;color:#D13438;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase', textContent: '🧹 UNINSTALL' }),
+                ui.el('h3', { style: 'margin:0;font-size:18px;font-weight:600', textContent: 'Confirm Cleanup' }),
+            ]),
+            ui.el('div', { style: 'display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:16px;padding:16px;background:rgba(209,52,56,0.06);border:1px solid #F1BBBC;border-radius:8px' }, [
+                ui.el('div', { style: 'font-size:11px;font-weight:600;color:#D13438;text-transform:uppercase;letter-spacing:0.5px', textContent: 'Uninstalling managed solution on' }),
+                envBox('TARGET', targetHostname, targetInfo),
+                ui.el('div', { style: 'display:inline-flex;gap:6px;background:var(--bg);border:1px solid #F1BBBC;color:#D13438;padding:6px 14px;border-radius:4px;font-size:13px;font-weight:600', textContent: `🗑️ ${solution.uniquename} v${solution.version}` }),
+            ]),
+            ui.el('div', { className: 'sd-alert-info' }, [
+                ui.el('strong', { textContent: 'What will happen: ' }),
+                'Uninstall the managed hotfix. Its layer is removed from every component, and each one falls back to the managed layer below it (your release).',
+            ]),
+            ...warnings.map((w) => ui.el('div', { style: 'margin-bottom:8px' }, [warningAlert(w)])),
+        );
+        if (analysisError) {
+            modal.append(ui.el('div', { className: 'sd-err-box', style: 'margin-bottom:16px;font-size:13px', textContent: `Could not work out which components only this hotfix holds: ${analysisError}` }));
+        } else if (!doomed.length) {
+            modal.append(ui.el('div', { className: 'sd-ok-box', style: 'font-size:13px', textContent: `✅ All ${total} component(s) are also in another managed solution on the target — they fall back to it, nothing is deleted.` }));
+        } else {
+            modal.append(
+                ui.el('div', { style: 'font-size:13px;font-weight:600;color:#D13438;margin:8px 0 6px', textContent: `${doomed.length} of ${total} component(s) exist only in this hotfix on the target and will be DELETED:` }),
+                ui.el('div', { style: 'max-height:180px;overflow-y:auto;border:1px solid #F1BBBC;border-radius:6px;padding:8px;margin-bottom:12px;background:var(--bg2)' },
+                    doomed.map((c) => ui.el('div', { style: 'font-size:12px;padding:3px 4px', textContent: `🗑️ ${c.name} (${c.typeName})` }))),
+            );
+        }
+        modal.append(ui.el('div', { style: 'margin-bottom:12px' }));
+    }, isSameEnv ? null : {
+        className: 'sd-btn-danger',
+        label: targetInfo?.label === 'PROD' ? '🧹 Uninstall on PROD' : '🧹 Uninstall',
+        acknowledge: doomed.length || analysisError
+            ? `I understand that these components${analysisError ? ', whichever they are,' : ''} and their data are deleted from ${targetHostname}.`
+            : '',
     });
 }
 
@@ -1895,11 +2113,29 @@ function renderDependencyResults() {
     return container;
 }
 
+// The target's unmanaged solutions, plus the managed hotfixes deployed to it
+// from here. Every other managed solution (Microsoft's, a vendor's, the release
+// itself) stays out of the list; typing its name still works, and the
+// confirmation then lists everything its uninstall would delete.
+async function loadCleanupCandidates() {
+    const [onTarget, map] = await Promise.all([
+        targetApi(state.targetEnvUrl, '/solutions?$filter=isvisible eq true&$select=solutionid,friendlyname,uniquename,version,ismanaged&$orderby=friendlyname asc'),
+        store.get('managedHotfixes', {}),
+    ]);
+    const hotfixes = new Set((map[hotfixKey(state.targetEnvUrl)] ?? []).map((n) => n.toLowerCase()));
+    return (onTarget.value ?? [])
+        .filter((s) => !s.ismanaged || hotfixes.has(s.uniquename.toLowerCase()))
+        .map((s) => (s.ismanaged ? { ...s, tag: 'managed hotfix' } : s));
+}
+
 function renderCleanupForm() {
     const container = ui.el('div');
     container.append(ui.el('div', { className: 'sd-alert-info' }, [
         ui.el('strong', { textContent: 'Cleanup Mode. ' }),
         'Deletes the unmanaged solution from the target environment so it no longer shows up after deployment. Without the option below, its components keep their unmanaged layer on top: a managed import with "overwrite unmanaged customizations" copies its values into that layer, but managed imports without that option no longer take effect until the layer is removed. Use this after deploying the managed version.',
+        ui.el('br'), ui.el('br'),
+        ui.el('strong', { textContent: 'Managed hotfixes ' }),
+        '(deployed with "Deploy as managed") are uninstalled instead: their layer goes, and each component falls back to the managed release below. Components only the hotfix holds are deleted with their data — you see which before confirming.',
     ]));
 
     const targetInput = ui.el('input', { className: 'ppt-input', type: 'text', placeholder: 'https://yourorg.crm.dynamics.com', value: state.targetEnvUrl });
@@ -1920,8 +2156,7 @@ function renderCleanupForm() {
     const fetchBtn = ui.el('button', { className: 'ppt-btn', style: 'margin-top:8px', textContent: '📦 Fetch solutions from target…' });
     fetchBtn.addEventListener('click', () => {
         if (!state.targetEnvUrl) { ui.toast('Enter target URL first.'); return; }
-        solutionPicker('Select Solution to Clean Up',
-            async () => (await targetApi(state.targetEnvUrl, '/solutions?$filter=ismanaged eq false and isvisible eq true&$select=solutionid,friendlyname,uniquename,version&$orderby=friendlyname asc')).value ?? [],
+        solutionPicker('Select Solution to Clean Up', loadCleanupCandidates,
             (s) => { state.cleanupSolutionName = s.uniquename; renderPanel(); });
     });
     const layersCheckbox = ui.el('input', { type: 'checkbox', checked: state.cleanupRemoveLayers, style: 'margin-top:2px;accent-color:#D13438' });
@@ -1932,6 +2167,7 @@ function renderCleanupForm() {
         layersCheckbox,
         ui.el('div', {}, [
             ui.el('div', { style: 'font-size:13px;font-weight:600', textContent: 'Also remove active customizations (unmanaged layers)' }),
+            ui.el('div', { style: 'font-size:11px;color:var(--muted)', textContent: 'Unmanaged solutions only — a managed hotfix is uninstalled instead.' }),
             ui.el('div', {
                 style: 'font-size:12px;color:var(--muted);margin-top:2px',
                 textContent: 'Removes the unmanaged layer of each component, so the managed solution below takes effect again, as if you had never deployed unmanaged. Deploy the managed release with the same changes first: removing layers before that brings back the previous managed version. Components that only exist unmanaged keep their layer.',
@@ -2057,9 +2293,25 @@ function renderTargetSelection() {
     }
     container.append(impSection);
 
+    const managedBox = ui.el('input', { type: 'checkbox', checked: state.deployManaged, style: 'margin-top:2px' });
+    managedBox.addEventListener('change', () => { state.deployManaged = managedBox.checked; renderPanel(); });
+    container.append(ui.el('label', {
+        style: 'display:flex;gap:8px;align-items:flex-start;margin-top:16px;padding:12px;border:1px solid var(--border);border-radius:6px;cursor:pointer',
+    }, [
+        managedBox,
+        ui.el('div', {}, [
+            ui.el('div', { style: 'font-size:13px;font-weight:600', textContent: 'Deploy as managed (hotfix)' }),
+            ui.el('div', {
+                style: 'font-size:12px;color:var(--muted);margin-top:2px',
+                textContent: 'Exports managed and imports it as an update: the hotfix becomes a managed layer above your release, and no unmanaged layer is left in TEST or PROD. Deploying it again replaces it, with no upgrade step. Once the release with the fix is installed, Cleanup uninstalls the hotfix — which deletes anything only the hotfix holds (new flows, new tables with their data).',
+            }),
+        ]),
+    ]));
+
+    const solutionLabel = state.deployMode === 'existing' ? (state.existingSolutionDisplayName || state.existingSolutionName) : state.newSolutionDisplayName;
     container.append(ui.el('div', { className: 'sd-alert-info', style: 'margin-top:16px;margin-bottom:0' }, [
         ui.el('strong', { textContent: 'Deploy Summary. ' }),
-        `Solution "${state.deployMode === 'existing' ? (state.existingSolutionDisplayName || state.existingSolutionName) : state.newSolutionDisplayName}" will be exported and imported into the target environment. The solution is kept on source for reuse.`,
+        `Solution "${solutionLabel}" will be exported ${state.deployManaged ? 'managed' : 'unmanaged'} and imported into the target environment. The solution is kept on source for reuse.`,
     ]));
     return container;
 }

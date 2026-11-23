@@ -318,3 +318,170 @@ test.describe('Solution Deployer', () => {
         }
     });
 });
+
+test.describe('Solution Deployer — managed hotfix', () => {
+    async function deployManaged(page, panel, targetOrg) {
+        await pickSolution(page, panel);
+        await panel.getByRole('button', { name: 'Next: Choose Target →' }).click();
+        await setTarget(panel, targetOrg);
+        await panel.getByText('Deploy as managed (hotfix)').click();
+        await panel.locator('.sd-footer').getByRole('button', { name: '🚀 Deploy Now' }).click();
+        const confirm = page.locator('.sd-modal', { hasText: 'Confirm Deployment' });
+        await expect(confirm).toContainText('Managed — imported as an update');
+        await confirm.getByRole('button', { name: '🚀 Deploy Now' }).click();
+    }
+
+    test('exports managed and imports it as a plain update, without publishing', async ({ page, org, targetOrg }) => {
+        deployableOrgs(org, targetOrg);
+        targetOrg.table('solutions', []);
+        const panel = await openDeployer(page, org);
+        await deployManaged(page, panel, targetOrg);
+
+        await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 20_000 });
+        await expect(panel).toContainText('Exporting solution (managed)…');
+        await expect(panel).toContainText('No cloud flows in this solution.');
+        expect(org.calls('POST', '/ExportSolutionAsync')[0].body).toEqual({ SolutionName: 'Core', Managed: true });
+        const [importCall] = targetOrg.calls('POST', '/ImportSolutionAsync');
+        expect(importCall.body).toMatchObject({ CustomizationFile: EXPORTED_FILE, PublishWorkflows: true });
+        expect(importCall.body).not.toHaveProperty('HoldingSolution');
+        expect(targetOrg.calls('POST', '/StageAndUpgradeAsync')).toHaveLength(0);
+        expect(targetOrg.calls('POST', '/PublishAllXml'), 'a managed import publishes itself').toHaveLength(0);
+    });
+
+    test('refuses to import managed over an unmanaged copy on the target, and says what to do', async ({ page, org, targetOrg }) => {
+        deployableOrgs(org, targetOrg); // the target holds Core unmanaged
+        const panel = await openDeployer(page, org);
+        await deployManaged(page, panel, targetOrg);
+        await expect(panel).toContainText('❌ Deployment failed: "Core" is on the target as an unmanaged solution', { timeout: 20_000 });
+        expect(targetOrg.calls('POST', '/ImportSolutionAsync')).toHaveLength(0);
+    });
+
+    test('imports as the chosen user when managed too', async ({ page, org, targetOrg }) => {
+        deployableOrgs(org, targetOrg);
+        targetOrg.table('solutions', []);
+        targetOrg.table('systemusers', [{ systemuserid: guid(51), fullname: 'Pipeline App User', internalemailaddress: 'pipeline@contoso.com', isdisabled: false }]);
+        const panel = await openDeployer(page, org);
+        await pickSolution(page, panel);
+        await panel.getByRole('button', { name: 'Next: Choose Target →' }).click();
+        await setTarget(panel, targetOrg);
+        await panel.getByPlaceholder('Search users on target by name or email…').fill('Pipeline');
+        await panel.locator('.sd-dropdown .sd-item', { hasText: 'Pipeline App User' }).click();
+        await panel.getByText('Deploy as managed (hotfix)').click();
+        await panel.locator('.sd-footer').getByRole('button', { name: '🚀 Deploy Now' }).click();
+        await page.locator('.sd-modal').getByRole('button', { name: '🚀 Deploy Now' }).click();
+        await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 20_000 });
+        for (const call of [...targetOrg.calls('POST', '/ImportSolutionAsync'), ...targetOrg.calls('GET', /^\/importjobs\(/)]) {
+            expect(call.headers.mscrmcallerid, `${call.method} ${call.path}`).toBe(guid(51));
+        }
+    });
+
+    const HOTFIX = { ...SOLUTION, solutionid: guid(12), ismanaged: true };
+    const RELEASE = { solutionid: guid(13), uniquename: 'Release', ismanaged: true };
+    const FIXED_FLOW = guid(91);
+    const NEW_FLOW = guid(92);
+
+    /** The target holds Core as a managed hotfix of `flows`; FIXED_FLOW is also in the managed Release. */
+    function hotfixOnTarget(org, targetOrg, flows) {
+        org.table('solutions', [{ ...SOLUTION }]);
+        targetOrg.table('solutions', [{ ...HOTFIX }]);
+        const names = { [FIXED_FLOW]: 'Lead | Score new lead', [NEW_FLOW]: 'Lead | New hotfix flow' };
+        targetOrg.table('solutioncomponents', flows.map((id, i) => ({ solutioncomponentid: guid(95 + i), _solutionid_value: HOTFIX.solutionid, componenttype: 29, objectid: id })));
+        targetOrg.table('msdyn_solutioncomponentsummaries', flows.map((id) => ({
+            msdyn_solutionid: HOTFIX.solutionid, msdyn_objectid: id, msdyn_displayname: names[id], msdyn_name: names[id], msdyn_componenttypename: 'Process',
+        })));
+        // Every solution each component is in, solution expanded — as a live org answers it.
+        const memberships = { [FIXED_FLOW]: [HOTFIX, RELEASE], [NEW_FLOW]: [HOTFIX] };
+        targetOrg.on('GET', '/solutioncomponents', (req) => {
+            if (!req.query.get('$expand')) return undefined;
+            const asked = [...req.query.get('$filter').matchAll(/objectid eq ([0-9a-f-]{36})/g)].map((m) => m[1]);
+            return { value: asked.flatMap((id) => (memberships[id] ?? []).map((s) => ({
+                objectid: id, componenttype: 29, solutionid: { solutionid: s.solutionid, uniquename: s.uniquename, ismanaged: s.ismanaged },
+            }))) };
+        });
+        targetOrg.on('POST', '/UninstallSolutionAsync', (req) => {
+            if (req.body.SolutionUniqueName !== 'Core') return undefined;
+            targetOrg.tables.solutions.splice(targetOrg.tables.solutions.findIndex((s) => s.uniquename === 'Core'), 1);
+            return { AsyncOperationId: guid(98) };
+        });
+        targetOrg.table('asyncoperations', [{ asyncoperationid: guid(98), statecode: 3, statuscode: 30 }]);
+    }
+
+    async function startCleanup(page, panel, targetOrg) {
+        await panel.getByRole('button', { name: '🧹 Cleanup' }).click();
+        await setTarget(panel, targetOrg);
+        const name = panel.getByPlaceholder('e.g. QuickDeploy_20260512');
+        await name.fill('Core');
+        await name.press('Tab');
+        await panel.locator('.sd-footer').getByRole('button', { name: '🧹 Run Cleanup' }).click();
+        return page.locator('.sd-modal');
+    }
+
+    test('cleans up a managed hotfix by uninstalling it: its components fall back to the release', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await expect(modal).toContainText('Uninstalling managed solution on');
+        await expect(modal).toContainText('All 1 component(s) are also in another managed solution');
+        await modal.getByRole('button', { name: '🧹 Uninstall' }).click();
+
+        await expect(panel).toContainText('✅ Cleanup completed! Managed hotfix uninstalled', { timeout: 20_000 });
+        expect(targetOrg.calls('POST', '/UninstallSolutionAsync')).toHaveLength(1);
+        expect(targetOrg.calls('POST', '/RemoveActiveCustomization')).toHaveLength(0);
+        expect(targetOrg.calls('DELETE', /^\/solutions\(/)).toHaveLength(0);
+    });
+
+    test('names what only the hotfix holds and will be deleted, and asks for an explicit yes', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW, NEW_FLOW]);
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await expect(modal).toContainText('1 of 2 component(s) exist only in this hotfix on the target');
+        await expect(modal).toContainText('Lead | New hotfix flow');
+        await expect(modal).not.toContainText('Lead | Score new lead');
+        await expect(modal).toContainText('WITH their data');
+        const uninstall = modal.getByRole('button', { name: '🧹 Uninstall' });
+        await expect(uninstall).toBeDisabled();
+        await modal.getByText('I understand that these components').click();
+        await uninstall.click();
+        await expect(panel).toContainText('✅ Cleanup completed! Managed hotfix uninstalled', { timeout: 20_000 });
+    });
+
+    test('lists the managed hotfixes it deployed among the solutions to clean up — not the managed release', async ({ page, org, targetOrg, serviceWorker }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        // The release is developed here too, so the source holds it unmanaged as well:
+        // only having deployed it as a hotfix puts a managed solution on the list.
+        org.tables.solutions.push({ ...SOLUTION, solutionid: guid(16), uniquename: 'Release', friendlyname: 'The Release' });
+        targetOrg.tables.solutions.push({ solutionid: guid(13), uniquename: 'Release', friendlyname: 'The Release', version: '2.0', ismanaged: true, isvisible: true });
+        targetOrg.tables.solutions.push({ solutionid: guid(14), uniquename: 'MicrosoftThing', friendlyname: 'Microsoft Thing', version: '9.0', ismanaged: true, isvisible: true });
+        targetOrg.tables.solutions.push({ solutionid: guid(15), uniquename: 'Work', friendlyname: 'Work in progress', version: '1.0', ismanaged: false, isvisible: true });
+        await serviceWorker.evaluate((target) => chrome.storage.local.set({
+            'vals/solution-deployer/managedHotfixes': { [target]: ['Core'] },
+        }), targetOrg.origin.toLowerCase());
+        const panel = await openDeployer(page, org);
+        await panel.getByRole('button', { name: '🧹 Cleanup' }).click();
+        await setTarget(panel, targetOrg);
+        await panel.getByRole('button', { name: '📦 Fetch solutions from target…' }).click();
+        const picker = page.locator('.sd-modal');
+        await expect(picker.locator('.sd-item', { hasText: 'Core Solution' })).toContainText('managed hotfix');
+        await expect(picker.locator('.sd-item', { hasText: 'Work in progress' })).toBeVisible();
+        await expect(picker.locator('.sd-item', { hasText: 'The Release' })).toHaveCount(0);
+        await expect(picker.locator('.sd-item', { hasText: 'Microsoft Thing' })).toHaveCount(0);
+    });
+
+    test('remembers a managed deploy as a hotfix of that target, and forgets it once uninstalled', async ({ page, org, targetOrg, serviceWorker }) => {
+        deployableOrgs(org, targetOrg);
+        targetOrg.table('solutions', []);
+        const panel = await openDeployer(page, org);
+        await deployManaged(page, panel, targetOrg);
+        await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 20_000 });
+        const hotfixes = () => serviceWorker.evaluate(() => chrome.storage.local.get('vals/solution-deployer/managedHotfixes')
+            .then((r) => r['vals/solution-deployer/managedHotfixes']));
+        expect(await hotfixes()).toEqual({ [targetOrg.origin.toLowerCase()]: ['Core'] });
+
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        await panel.getByRole('button', { name: '🔄 New Deployment' }).click();
+        const modal = await startCleanup(page, panel, targetOrg);
+        await modal.getByRole('button', { name: '🧹 Uninstall' }).click();
+        await expect(panel).toContainText('✅ Cleanup completed! Managed hotfix uninstalled', { timeout: 20_000 });
+        expect(await hotfixes()).toEqual({ [targetOrg.origin.toLowerCase()]: [] });
+    });
+});

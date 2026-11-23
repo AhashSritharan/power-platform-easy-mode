@@ -219,7 +219,8 @@ downloading and uploading zips by hand.
 2. **Next: Choose Target**: pick one of your labelled environments, or paste
    its URL. Optionally import *as another user* (e.g. a pipeline application
    user) so the components are owned by them.
-3. **Deploy Now**: it exports the solution, imports it into the target and
+3. **Deploy Now**: it exports the solution (unmanaged, unless you tick
+   **Deploy as managed**, see below), imports it into the target and
    publishes. A confirmation names the target first, so a PROD deployment
    never happens by accident.
 
@@ -240,6 +241,21 @@ take effect. Tick **Also remove active customizations** to remove those layers
 too, so the environment is as if you had never deployed unmanaged. Do that only
 after the managed release with the same changes is in; before, it brings back
 the previous managed version.
+
+**Deploy as managed (hotfix)**, a tick on the target step, ships a hotfix
+without leaving any unmanaged layer in TEST or PROD. The solution is exported
+managed and imported as a normal update (no holding solution, no upgrade), so
+it lands as one more managed layer on top of your release. Deploying the same
+hotfix again just replaces it. When the release that contains the fix is
+installed, **Cleanup** uninstalls the hotfix. Its layer goes away and each
+component falls back to the release underneath. Be careful with this:
+**uninstalling deletes everything that exists only in the hotfix** (new flows,
+new tables and columns *with their data*) unless a managed release that
+contains them is already installed. Before you confirm, the dialog lists those
+components, and you have to tick that you understand before **Uninstall**
+becomes available. Cleanup's solution list shows the hotfixes you deployed
+this way. Other managed solutions, including the release itself, are not
+listed.
 
 You must be signed in to the target environment in another tab. The
 Easy Mode uses your existing sign-in and never asks for a password.
