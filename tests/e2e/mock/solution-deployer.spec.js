@@ -484,4 +484,94 @@ test.describe('Solution Deployer — managed hotfix', () => {
         await expect(panel).toContainText('✅ Cleanup completed! Managed hotfix uninstalled', { timeout: 20_000 });
         expect(await hotfixes()).toEqual({ [targetOrg.origin.toLowerCase()]: [] });
     });
+
+    const storedHotfixes = (serviceWorker) => serviceWorker.evaluate(() => chrome.storage.local.get('vals/solution-deployer/managedHotfixes')
+        .then((r) => r['vals/solution-deployer/managedHotfixes']));
+
+    test('does not take a managed solution that was already on the target for a hotfix', async ({ page, org, targetOrg, serviceWorker }) => {
+        // Deploying the release's source over its managed copy updates the release:
+        // that must not put the release on Cleanup's list of disposable hotfixes.
+        deployableOrgs(org, targetOrg);
+        targetOrg.table('solutions', [{ ...SOLUTION, solutionid: guid(12), ismanaged: true }]);
+        const panel = await openDeployer(page, org);
+        await deployManaged(page, panel, targetOrg);
+        await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 20_000 });
+        await expect(panel).toContainText('was already installed managed on the target');
+        await expect(panel).not.toContainText('clean the hotfix up with Cleanup');
+        expect((await storedHotfixes(serviceWorker))?.[targetOrg.origin.toLowerCase()] ?? []).toEqual([]);
+    });
+
+    test('keeps a hotfix it deployed before on the list when deploying it again', async ({ page, org, targetOrg, serviceWorker }) => {
+        deployableOrgs(org, targetOrg);
+        targetOrg.table('solutions', [{ ...SOLUTION, solutionid: guid(12), ismanaged: true }]);
+        await serviceWorker.evaluate((target) => chrome.storage.local.set({
+            'vals/solution-deployer/managedHotfixes': { [target]: ['Core'] },
+        }), targetOrg.origin.toLowerCase());
+        const panel = await openDeployer(page, org);
+        await deployManaged(page, panel, targetOrg);
+        await expect(panel).toContainText('✅ Deployment completed successfully!', { timeout: 20_000 });
+        await expect(panel).toContainText('clean the hotfix up with Cleanup');
+        expect(await storedHotfixes(serviceWorker)).toEqual({ [targetOrg.origin.toLowerCase()]: ['Core'] });
+    });
+
+    test('follows every page of the hotfix\'s components before saying nothing is deleted', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW, NEW_FLOW]);
+        // The hotfix-only flow sits on the second page of components.
+        targetOrg.on('GET', '/solutioncomponents', (req) => {
+            if (req.query.get('$expand') || !/_solutionid_value/.test(req.query.get('$filter') ?? '')) return undefined;
+            const row = (id) => ({ componenttype: 29, objectid: id });
+            if (!req.query.get('$skiptoken')) {
+                return { value: [row(FIXED_FLOW)], '@odata.nextLink': `${targetOrg.origin}/api/data/v9.2/solutioncomponents?$filter=${encodeURIComponent(req.query.get('$filter'))}&$select=componenttype,objectid&$skiptoken=2` };
+            }
+            return { value: [row(NEW_FLOW)] };
+        });
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await expect(modal).toContainText('1 of 2 component(s) exist only in this hotfix on the target');
+        await expect(modal).toContainText('Lead | New hotfix flow');
+        await expect(modal).not.toContainText('nothing is deleted');
+    });
+
+    test('offers no uninstall when it cannot work out what would be deleted', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        targetOrg.on('GET', '/solutioncomponents', (req) => (req.query.get('$expand')
+            ? { status: 500, json: { error: { code: '0x80040216', message: 'Generic SQL error.' } } } : undefined));
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await expect(modal).toContainText('Could not check which components only this hotfix holds');
+        await expect(modal).not.toContainText('nothing is deleted');
+        await expect(modal.getByRole('button', { name: /Uninstall/ })).toHaveCount(0);
+        await modal.getByRole('button', { name: 'Cancel' }).click();
+        expect(targetOrg.calls('POST', '/UninstallSolutionAsync')).toHaveLength(0);
+    });
+
+    test('stops when it cannot look the solution up, instead of treating it as unmanaged', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        targetOrg.on('GET', '/solutions', (req) => (/uniquename eq 'Core'/.test(req.query.get('$filter') ?? '')
+            ? { status: 503, json: { error: { code: '0x80040216', message: 'Service unavailable.' } } } : undefined));
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await expect(modal).toContainText('Could not look up "Core" on the target');
+        await expect(modal.getByRole('button', { name: /Run Cleanup|Uninstall/ })).toHaveCount(0);
+        await modal.getByRole('button', { name: 'Cancel' }).click();
+        expect(targetOrg.calls('POST', '/UninstallSolutionAsync')).toHaveLength(0);
+        expect(targetOrg.calls('DELETE', /^\/solutions\(/)).toHaveLength(0);
+    });
+
+    test('does only what was confirmed: an unmanaged cleanup never uninstalls a managed solution', async ({ page, org, targetOrg }) => {
+        hotfixOnTarget(org, targetOrg, [FIXED_FLOW]);
+        // Confirmed as unmanaged; by the time the pipeline looks again, it is managed.
+        let lookups = 0;
+        targetOrg.on('GET', '/solutions', (req) => {
+            if (!/uniquename eq 'Core'/.test(req.query.get('$filter') ?? '')) return undefined;
+            lookups += 1;
+            return { value: [{ ...HOTFIX, ismanaged: lookups > 1 }] };
+        });
+        const panel = await openDeployer(page, org);
+        const modal = await startCleanup(page, panel, targetOrg);
+        await modal.getByRole('button', { name: '🧹 Run Cleanup' }).click();
+        await expect(panel).toContainText('❌ Cleanup failed: "Core" changed on the target since you confirmed');
+        expect(targetOrg.calls('POST', '/UninstallSolutionAsync')).toHaveLength(0);
+        expect(targetOrg.calls('DELETE', /^\/solutions\(/)).toHaveLength(0);
+    });
 });

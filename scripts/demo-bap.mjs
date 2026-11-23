@@ -15,7 +15,9 @@ const token = new Promise((resolve) => page.on('request', (r) => {
     if (auth && r.url().includes('api.bap.microsoft.com')) resolve(auth);
 }));
 await page.goto('https://admin.powerplatform.microsoft.com/manage/environments');
-const auth = await Promise.race([token, new Promise((_, rej) => setTimeout(() => rej(new Error('no BAP token: ' + page.url())), 90_000))]);
+let timer;
+const auth = await Promise.race([token, new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('no BAP token: ' + page.url())), 90_000); })])
+    .finally(() => clearTimeout(timer)); // a pending timer would keep node alive for the full 90 s
 const res = await fetch(`https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/${path}`, {
     method,
     headers: { authorization: auth, 'content-type': 'application/json' },
