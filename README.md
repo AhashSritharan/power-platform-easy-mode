@@ -246,16 +246,19 @@ the previous managed version.
 without leaving any unmanaged layer in TEST or PROD. The solution is exported
 managed and imported as a normal update (no holding solution, no upgrade), so
 it lands as one more managed layer on top of your release. Deploying the same
-hotfix again just replaces it. When the release that contains the fix is
-installed, **Cleanup** uninstalls the hotfix. Its layer goes away and each
-component falls back to the release underneath. Be careful with this:
-**uninstalling deletes everything that exists only in the hotfix** (new flows,
-new tables and columns *with their data*) unless a managed release that
-contains them is already installed. Before you confirm, the dialog lists those
-components, and you have to tick that you understand before **Uninstall**
-becomes available. Cleanup's solution list shows the hotfixes you deployed
-this way. Other managed solutions, including the release itself, are not
-listed.
+hotfix again just replaces it.
+
+When the release that contains the fix is installed, delete the hotfix. Its
+layer goes away and each component falls back to the release underneath. Be
+careful with this: **deleting a managed solution deletes everything that
+exists only in it** (new flows, new tables and columns *with their data*)
+unless a managed release that contains them is already installed. The
+Easy Mode never deletes a managed solution itself. **Cleanup** checks the
+hotfix on the target, lists the components that deleting it would take with
+it, and opens the maker portal's Solutions list. You delete the hotfix there
+yourself, with Microsoft's own **Delete** (*Managed* → the hotfix → **⋮** →
+**Delete**). Cleanup's solution list shows the hotfixes you deployed this way.
+Other managed solutions, including the release itself, are not listed.
 
 You must be signed in to the target environment in another tab. The
 Easy Mode uses your existing sign-in and never asks for a password.
